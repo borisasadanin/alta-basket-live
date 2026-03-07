@@ -1,9 +1,11 @@
-// === Älta IF Basket — HLS Live Player ===
+// === Älta IF Basket — Stream List + HLS Player ===
 
-const STREAM_URL =
-  "https://eyevinnlab-restreamer.datarhei-restreamer.auto.prod.osaas.io/memfs/51ae4178-6857-44fb-87a5-974077fff9e8.m3u8";
-
-const POLL_INTERVAL = 15000;
+// --- DOM refs ---
+const streamListView = document.getElementById("streamListView");
+const streamGrid = document.getElementById("streamGrid");
+const emptyState = document.getElementById("emptyState");
+const playerView = document.getElementById("playerView");
+const backBtn = document.getElementById("backBtn");
 
 const video = document.getElementById("video");
 const wrapper = document.getElementById("videoWrapper");
@@ -19,6 +21,8 @@ const qualityLabel = document.getElementById("qualityLabel");
 const qualityMenu = document.getElementById("qualityMenu");
 const liveBadge = document.getElementById("liveBadge");
 const statusDot = document.getElementById("statusDot");
+const streamTitle = document.getElementById("streamTitle");
+const streamDesc = document.getElementById("streamDesc");
 
 const iconPlay = playBtn.querySelector(".icon-play");
 const iconPause = playBtn.querySelector(".icon-pause");
@@ -29,10 +33,104 @@ const iconFsExit = fullscreenBtn.querySelector(".icon-fs-exit");
 
 let hls = null;
 let controlsTimeout = null;
-let pollTimer = null;
-let currentStatus = "connecting";
+let streamPollTimer = null;
+let listPollTimer = null;
+let currentStatus = "offline";
+let currentStreamUrl = null;
 
-// --- State management ---
+// ============================
+// Stream List
+// ============================
+
+async function fetchStreams() {
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/api/streams`);
+    if (!res.ok) throw new Error(res.status);
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function renderStreamList(streams) {
+  if (!streams || streams.length === 0) {
+    streamGrid.innerHTML = "";
+    streamGrid.classList.add("hidden");
+    emptyState.classList.remove("hidden");
+    statusDot.className = "status-dot offline";
+    return;
+  }
+
+  emptyState.classList.add("hidden");
+  streamGrid.classList.remove("hidden");
+  statusDot.className = "status-dot live";
+
+  streamGrid.innerHTML = streams
+    .map(
+      (s) => `
+    <button class="stream-card" data-hls="${s.hlsUrl}" data-name="${s.name}">
+      <div class="stream-card-badge">LIVE</div>
+      <div class="stream-card-name">${s.name}</div>
+    </button>`
+    )
+    .join("");
+
+  streamGrid.querySelectorAll(".stream-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      openPlayer(card.dataset.hls, card.dataset.name);
+    });
+  });
+}
+
+async function pollStreamList() {
+  const streams = await fetchStreams();
+  if (streams !== null) {
+    renderStreamList(streams);
+  }
+}
+
+function startListPolling() {
+  clearInterval(listPollTimer);
+  pollStreamList();
+  listPollTimer = setInterval(pollStreamList, CONFIG.LIST_POLL_INTERVAL);
+}
+
+function stopListPolling() {
+  clearInterval(listPollTimer);
+}
+
+// ============================
+// Player
+// ============================
+
+function openPlayer(hlsUrl, name) {
+  currentStreamUrl = hlsUrl;
+  stopListPolling();
+
+  streamListView.classList.add("hidden");
+  playerView.classList.remove("hidden");
+
+  streamTitle.textContent = name;
+  streamDesc.textContent = "Följ matchen live.";
+
+  setStatus("connecting");
+  tryConnect();
+  startStreamPolling();
+}
+
+function closePlayer() {
+  destroyHls();
+  stopStreamPolling();
+  currentStreamUrl = null;
+
+  playerView.classList.add("hidden");
+  streamListView.classList.remove("hidden");
+
+  setStatus("offline");
+  startListPolling();
+}
+
+// --- Status ---
 
 function setStatus(status) {
   if (status === currentStatus) return;
@@ -42,34 +140,26 @@ function setStatus(status) {
     case "connecting":
       liveBadge.textContent = "ANSLUTER";
       liveBadge.className = "live-badge connecting";
-      statusDot.className = "status-dot connecting";
       showOverlay("Ansluter till sändningen\u2026", true);
       break;
     case "live":
       liveBadge.textContent = "LIVE";
       liveBadge.className = "live-badge live";
-      statusDot.className = "status-dot live";
       hideOverlay();
       break;
     case "offline":
       liveBadge.textContent = "OFFLINE";
       liveBadge.className = "live-badge offline";
-      statusDot.className = "status-dot offline";
-      showOverlay("Ingen s\u00e4ndning just nu", false);
+      showOverlay("Ingen sändning just nu", false);
       break;
   }
 }
 
-// --- Init ---
-
-function init() {
-  setStatus("connecting");
-  tryConnect();
-  bindEvents();
-  startPolling();
-}
+// --- HLS ---
 
 function tryConnect() {
+  if (!currentStreamUrl) return;
+
   if (Hls.isSupported()) {
     startHls();
   } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -80,10 +170,7 @@ function tryConnect() {
 }
 
 function startHls() {
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
+  destroyHls();
 
   hls = new Hls({
     enableWorker: true,
@@ -99,7 +186,7 @@ function startHls() {
     fragLoadingMaxRetry: 1,
   });
 
-  hls.loadSource(STREAM_URL);
+  hls.loadSource(currentStreamUrl);
   hls.attachMedia(video);
 
   hls.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
@@ -108,29 +195,48 @@ function startHls() {
 }
 
 function startNative() {
-  video.src = STREAM_URL;
-  video.addEventListener("loadedmetadata", () => {
-    setStatus("live");
-    buildNativeQualityMenu();
-  }, { once: true });
-  video.addEventListener("error", () => {
-    setStatus("offline");
-  }, { once: true });
+  video.src = currentStreamUrl;
+  video.addEventListener(
+    "loadedmetadata",
+    () => {
+      setStatus("live");
+      buildNativeQualityMenu();
+    },
+    { once: true }
+  );
+  video.addEventListener(
+    "error",
+    () => {
+      setStatus("offline");
+    },
+    { once: true }
+  );
 }
 
-// --- Polling: lightweight HEAD check every 15s when offline ---
+function destroyHls() {
+  if (hls) {
+    hls.destroy();
+    hls = null;
+  }
+}
 
-function startPolling() {
-  clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    if (currentStatus !== "live") {
+// --- Stream polling (when player is open but offline) ---
+
+function startStreamPolling() {
+  clearInterval(streamPollTimer);
+  streamPollTimer = setInterval(() => {
+    if (currentStatus !== "live" && currentStreamUrl) {
       checkStream();
     }
-  }, POLL_INTERVAL);
+  }, CONFIG.STREAM_POLL_INTERVAL);
+}
+
+function stopStreamPolling() {
+  clearInterval(streamPollTimer);
 }
 
 function checkStream() {
-  fetch(STREAM_URL, { method: "HEAD", mode: "cors" })
+  fetch(currentStreamUrl, { method: "HEAD", mode: "cors" })
     .then((res) => {
       if (res.ok && currentStatus !== "live") {
         setStatus("connecting");
@@ -160,9 +266,7 @@ function onManifestParsed() {
 
 function onHlsError(_event, data) {
   if (data.fatal) {
-    hls.destroy();
-    hls = null;
-    // Go straight to offline — polling will detect when stream comes back
+    destroyHls();
     setStatus("offline");
   }
 }
@@ -307,6 +411,8 @@ function showOverlay(msg, showSpinner) {
 // --- Events ---
 
 function bindEvents() {
+  backBtn.addEventListener("click", closePlayer);
+
   playBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     togglePlay();
@@ -344,6 +450,7 @@ function bindEvents() {
 
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
+    if (playerView.classList.contains("hidden")) return;
     switch (e.key) {
       case " ":
       case "k":
@@ -356,17 +463,24 @@ function bindEvents() {
       case "f":
         toggleFullscreen();
         break;
+      case "Escape":
+        closePlayer();
+        break;
     }
   });
 
-  // Handle page visibility — check stream when tab becomes active
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && currentStatus !== "live") {
+    if (!document.hidden && currentStreamUrl && currentStatus !== "live") {
       checkStream();
     }
   });
 }
 
-// --- Start ---
+// --- Init ---
+
+function init() {
+  bindEvents();
+  startListPolling();
+}
 
 init();

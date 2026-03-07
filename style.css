@@ -29,6 +29,10 @@ body {
   flex-direction: column;
 }
 
+.hidden {
+  display: none !important;
+}
+
 /* --- Header --- */
 
 header {
@@ -112,6 +116,99 @@ main {
   width: 100%;
   margin: 0 auto;
   padding: 24px 16px;
+}
+
+/* --- Stream list --- */
+
+.stream-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.stream-card {
+  background: var(--surface);
+  border: 1px solid #222;
+  border-radius: var(--radius);
+  padding: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.stream-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--gold-dim);
+}
+
+.stream-card-badge {
+  background: var(--red);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+.stream-card-name {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Empty state */
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.empty-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  opacity: 0.3;
+  margin-bottom: 20px;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.empty-sub {
+  font-size: 0.85rem !important;
+  margin-top: 6px;
+  opacity: 0.6;
+}
+
+/* --- Back button --- */
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-bottom: 16px;
+  transition: opacity 0.15s;
+}
+
+.back-btn:hover {
+  opacity: 0.7;
 }
 
 /* --- Player --- */
@@ -430,6 +527,15 @@ footer {
 
   main {
     padding: 12px 8px;
+  }
+
+  .stream-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .stream-card {
+    padding: 16px;
   }
 
   .volume-slider {

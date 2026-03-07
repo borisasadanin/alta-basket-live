@@ -24,54 +24,74 @@
   </header>
 
   <main>
-    <div class="player-container">
-      <div class="video-wrapper" id="videoWrapper">
-        <video id="video" playsinline></video>
+    <!-- Stream list view -->
+    <section id="streamListView">
+      <div class="stream-grid" id="streamGrid">
+        <!-- Filled by JS -->
+      </div>
+      <div class="empty-state" id="emptyState">
+        <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="empty-logo">
+        <p>Ingen sänder just nu</p>
+        <p class="empty-sub">Sändningen visas här automatiskt när den startar</p>
+      </div>
+    </section>
 
-        <div class="controls" id="controls">
-          <button id="playBtn" class="control-btn" aria-label="Spela">
-            <svg class="icon icon-play" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
-            <svg class="icon icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
-          </button>
+    <!-- Player view (hidden until a stream is selected) -->
+    <section id="playerView" class="hidden">
+      <button class="back-btn" id="backBtn">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Alla sändningar
+      </button>
 
-          <div class="live-badge offline" id="liveBadge">OFFLINE</div>
+      <div class="player-container">
+        <div class="video-wrapper" id="videoWrapper">
+          <video id="video" playsinline></video>
 
-          <div class="volume-group">
-            <button id="muteBtn" class="control-btn" aria-label="Ljud">
-              <svg class="icon icon-vol" viewBox="0 0 24 24"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19.07 4.93a10 10 0 010 14.14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-              <svg class="icon icon-muted" viewBox="0 0 24 24" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <div class="controls" id="controls">
+            <button id="playBtn" class="control-btn" aria-label="Spela">
+              <svg class="icon icon-play" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
+              <svg class="icon icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
             </button>
-            <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" class="volume-slider">
+
+            <div class="live-badge offline" id="liveBadge">OFFLINE</div>
+
+            <div class="volume-group">
+              <button id="muteBtn" class="control-btn" aria-label="Ljud">
+                <svg class="icon icon-vol" viewBox="0 0 24 24"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M19.07 4.93a10 10 0 010 14.14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                <svg class="icon icon-muted" viewBox="0 0 24 24" style="display:none"><polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              </button>
+              <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" class="volume-slider">
+            </div>
+
+            <div class="spacer"></div>
+
+            <div class="quality-group">
+              <button id="qualityBtn" class="control-btn quality-btn" aria-label="Kvalitet">
+                <span id="qualityLabel">Auto</span>
+              </button>
+              <div class="quality-menu" id="qualityMenu"></div>
+            </div>
+
+            <button id="fullscreenBtn" class="control-btn" aria-label="Helskärm">
+              <svg class="icon icon-fs-enter" viewBox="0 0 24 24"><polyline points="15,3 21,3 21,9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9,21 3,21 3,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="21,3 14,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="3,21 10,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <svg class="icon icon-fs-exit" viewBox="0 0 24 24" style="display:none"><polyline points="4,14 10,14 10,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="20,10 14,10 14,4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14,10 21,3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="10,14 3,21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
           </div>
 
-          <div class="spacer"></div>
-
-          <div class="quality-group">
-            <button id="qualityBtn" class="control-btn quality-btn" aria-label="Kvalitet">
-              <span id="qualityLabel">Auto</span>
-            </button>
-            <div class="quality-menu" id="qualityMenu"></div>
-          </div>
-
-          <button id="fullscreenBtn" class="control-btn" aria-label="Helskärm">
-            <svg class="icon icon-fs-enter" viewBox="0 0 24 24"><polyline points="15,3 21,3 21,9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9,21 3,21 3,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="21,3 14,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="3,21 10,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            <svg class="icon icon-fs-exit" viewBox="0 0 24 24" style="display:none"><polyline points="4,14 10,14 10,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="20,10 14,10 14,4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14,10 21,3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="10,14 3,21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          </button>
-        </div>
-
-        <div class="overlay" id="overlay">
-          <div class="overlay-content">
-            <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="overlay-logo">
-            <div class="spinner" id="overlaySpinner"></div>
-            <p class="overlay-text">Ansluter till sändningen…</p>
+          <div class="overlay" id="overlay">
+            <div class="overlay-content">
+              <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="overlay-logo">
+              <div class="spinner" id="overlaySpinner"></div>
+              <p class="overlay-text">Ansluter till sändningen…</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <section class="info-section">
-      <h2 id="streamTitle">Älta IF Basket — Livesändning</h2>
-      <p id="streamDesc">Följ matchen live. Sändningen startar automatiskt när den blir tillgänglig.</p>
+      <section class="info-section">
+        <h2 id="streamTitle">Livesändning</h2>
+        <p id="streamDesc">Följ matchen live.</p>
+      </section>
     </section>
   </main>
 
@@ -80,6 +100,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <script src="config.js"></script>
   <script src="player.js"></script>
 </body>
 </html>
