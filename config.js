@@ -1,8 +1,8 @@
 // === Älta IF Basket — Configuration ===
 
 const CONFIG = {
-  // Backend API URL (change for production)
-  API_URL: "http://localhost:8000",
+  // Backend API URL
+  API_URL: "https://borispriv-altabasketapi.eyevinn-web-runner.auto.prod.osaas.io",
 
   // How often to poll for stream list updates (ms)
   LIST_POLL_INTERVAL: 10000,
