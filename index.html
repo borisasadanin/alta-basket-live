@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0a0a0a">
+  <meta name="description" content="Följ Älta IF Basket live — streama matcher direkt från hallen.">
   <title>Älta IF Basket — Live</title>
   <link rel="icon" href="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" type="image/png">
   <link rel="stylesheet" href="style.css">
@@ -13,7 +15,10 @@
       <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="logo">
       <div class="header-text">
         <h1>Älta IF Basket</h1>
-        <p class="subtitle">Live</p>
+        <div class="status-row">
+          <span class="status-dot offline" id="statusDot"></span>
+          <p class="subtitle" id="headerStatus">Live</p>
+        </div>
       </div>
     </div>
   </header>
@@ -29,7 +34,7 @@
             <svg class="icon icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
           </button>
 
-          <div class="live-badge" id="liveBadge">LIVE</div>
+          <div class="live-badge offline" id="liveBadge">OFFLINE</div>
 
           <div class="volume-group">
             <button id="muteBtn" class="control-btn" aria-label="Ljud">
@@ -57,7 +62,8 @@
         <div class="overlay" id="overlay">
           <div class="overlay-content">
             <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="overlay-logo">
-            <p class="overlay-text">Sändningen har inte startat ännu</p>
+            <div class="spinner" id="overlaySpinner"></div>
+            <p class="overlay-text">Ansluter till sändningen…</p>
           </div>
         </div>
       </div>
