@@ -1,8 +1,8 @@
 // === Älta IF Basket — HLS Live Player ===
 
-// Configure your eyevinn-live-encoding HLS URL here:
+// Configure your Restreamer HLS URL here:
 const STREAM_URL =
-  "https://demo.eyevinn-live-encoding.auto.prod.osaas.io/origin/hls/index.m3u8";
+  "https://eyevinnlab-restreamer.datarhei-restreamer.auto.prod.osaas.io/memfs/51ae4178-6857-44fb-87a5-974077fff9e8.m3u8";
 
 const video = document.getElementById("video");
 const wrapper = document.getElementById("videoWrapper");
