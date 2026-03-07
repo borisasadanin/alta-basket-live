@@ -35,8 +35,10 @@ let hls = null;
 let controlsTimeout = null;
 let streamPollTimer = null;
 let listPollTimer = null;
+let viewerHeartbeatTimer = null;
 let currentStatus = "offline";
 let currentStreamUrl = null;
+let currentStreamId = null;
 
 // ============================
 // Stream List
@@ -68,8 +70,11 @@ function renderStreamList(streams) {
   streamGrid.innerHTML = streams
     .map(
       (s) => `
-    <button class="stream-card" data-hls="${s.hlsUrl}" data-name="${s.name}">
-      <div class="stream-card-badge">LIVE</div>
+    <button class="stream-card" data-hls="${s.hlsUrl}" data-name="${s.name}" data-id="${s.id}">
+      <div class="stream-card-top">
+        <div class="stream-card-badge ${s.status === "live" ? "live" : "waiting"}">${s.status === "live" ? "LIVE" : "STARTAR..."}</div>
+        ${s.viewers > 0 ? `<div class="stream-card-viewers">${s.viewers} tittare</div>` : ""}
+      </div>
       <div class="stream-card-name">${s.name}</div>
     </button>`
     )
@@ -77,7 +82,7 @@ function renderStreamList(streams) {
 
   streamGrid.querySelectorAll(".stream-card").forEach((card) => {
     card.addEventListener("click", () => {
-      openPlayer(card.dataset.hls, card.dataset.name);
+      openPlayer(card.dataset.hls, card.dataset.name, card.dataset.id);
     });
   });
 }
@@ -103,8 +108,9 @@ function stopListPolling() {
 // Player
 // ============================
 
-function openPlayer(hlsUrl, name) {
+function openPlayer(hlsUrl, name, streamId) {
   currentStreamUrl = hlsUrl;
+  currentStreamId = streamId;
   stopListPolling();
 
   streamListView.classList.add("hidden");
@@ -116,12 +122,15 @@ function openPlayer(hlsUrl, name) {
   setStatus("connecting");
   tryConnect();
   startStreamPolling();
+  startViewerHeartbeat();
 }
 
 function closePlayer() {
   destroyHls();
   stopStreamPolling();
+  stopViewerHeartbeat();
   currentStreamUrl = null;
+  currentStreamId = null;
 
   playerView.classList.add("hidden");
   streamListView.classList.remove("hidden");
@@ -406,6 +415,25 @@ function showOverlay(msg, showSpinner) {
   if (overlaySpinner) {
     overlaySpinner.style.display = showSpinner ? "block" : "none";
   }
+}
+
+// --- Viewer heartbeat ---
+
+function startViewerHeartbeat() {
+  stopViewerHeartbeat();
+  sendViewerHeartbeat();
+  viewerHeartbeatTimer = setInterval(sendViewerHeartbeat, 30_000);
+}
+
+function stopViewerHeartbeat() {
+  clearInterval(viewerHeartbeatTimer);
+}
+
+function sendViewerHeartbeat() {
+  if (!currentStreamId) return;
+  fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}/view`, {
+    method: "POST",
+  }).catch(() => {});
 }
 
 // --- Events ---

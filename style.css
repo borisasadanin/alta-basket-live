@@ -133,8 +133,8 @@ main {
   padding: 20px;
   cursor: pointer;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  gap: 10px;
   transition: background 0.15s, border-color 0.15s;
   text-align: left;
   color: var(--text);
@@ -147,8 +147,13 @@ main {
   border-color: var(--gold-dim);
 }
 
+.stream-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .stream-card-badge {
-  background: var(--red);
   color: #fff;
   font-size: 0.6rem;
   font-weight: 700;
@@ -156,7 +161,21 @@ main {
   padding: 3px 8px;
   border-radius: 3px;
   flex-shrink: 0;
+}
+
+.stream-card-badge.live {
+  background: var(--red);
   animation: badge-pulse 2s ease-in-out infinite;
+}
+
+.stream-card-badge.waiting {
+  background: var(--gold-dim);
+  animation: badge-pulse 1.5s ease-in-out infinite;
+}
+
+.stream-card-viewers {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .stream-card-name {
