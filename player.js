@@ -65,22 +65,32 @@ function renderStreamList(streams) {
 
   emptyState.classList.add("hidden");
   streamGrid.classList.remove("hidden");
-  statusDot.className = "status-dot live";
+
+  const hasLive = streams.some((s) => s.status === "live" || s.status === "waiting");
+  statusDot.className = hasLive ? "status-dot live" : "status-dot offline";
+
+  const badgeMap = {
+    live: { cls: "live", text: "LIVE" },
+    waiting: { cls: "waiting", text: "STARTAR..." },
+    stopped: { cls: "stopped", text: "AVSLUTAD" },
+  };
 
   streamGrid.innerHTML = streams
-    .map(
-      (s) => `
-    <button class="stream-card" data-hls="${s.hlsUrl}" data-name="${s.name}" data-id="${s.id}">
+    .map((s) => {
+      const badge = badgeMap[s.status] || badgeMap.waiting;
+      const isStopped = s.status === "stopped";
+      return `
+    <button class="stream-card ${isStopped ? "stopped" : ""}" data-hls="${s.hlsUrl}" data-name="${s.name}" data-id="${s.id}" ${isStopped ? "disabled" : ""}>
       <div class="stream-card-top">
-        <div class="stream-card-badge ${s.status === "live" ? "live" : "waiting"}">${s.status === "live" ? "LIVE" : "STARTAR..."}</div>
+        <div class="stream-card-badge ${badge.cls}">${badge.text}</div>
         ${s.viewers > 0 ? `<div class="stream-card-viewers">${s.viewers} tittare</div>` : ""}
       </div>
       <div class="stream-card-name">${s.name}</div>
-    </button>`
-    )
+    </button>`;
+    })
     .join("");
 
-  streamGrid.querySelectorAll(".stream-card").forEach((card) => {
+  streamGrid.querySelectorAll(".stream-card:not([disabled])").forEach((card) => {
     card.addEventListener("click", () => {
       openPlayer(card.dataset.hls, card.dataset.name, card.dataset.id);
     });
@@ -233,32 +243,34 @@ function destroyHls() {
 
 function startStreamPolling() {
   clearInterval(streamPollTimer);
-  streamPollTimer = setInterval(() => {
-    if (currentStatus !== "live" && currentStreamUrl) {
-      checkStream();
-    }
-  }, CONFIG.STREAM_POLL_INTERVAL);
+  streamPollTimer = setInterval(pollCurrentStream, 5000);
 }
 
 function stopStreamPolling() {
   clearInterval(streamPollTimer);
 }
 
-function checkStream() {
-  fetch(currentStreamUrl, { method: "HEAD", mode: "cors" })
-    .then((res) => {
-      if (res.ok && currentStatus !== "live") {
-        setStatus("connecting");
-        tryConnect();
-      } else if (!res.ok && currentStatus === "connecting") {
-        setStatus("offline");
-      }
-    })
-    .catch(() => {
-      if (currentStatus === "connecting") {
-        setStatus("offline");
-      }
-    });
+async function pollCurrentStream() {
+  if (!currentStreamId) return;
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`);
+    if (!res.ok) {
+      // Stream gone
+      showOverlay("Sändningen har avslutats", false);
+      setTimeout(closePlayer, 2500);
+      return;
+    }
+    const stream = await res.json();
+    if (stream.status === "stopped") {
+      showOverlay("Sändningen har avslutats", false);
+      setTimeout(closePlayer, 2500);
+    } else if (stream.status === "live" && currentStatus !== "live") {
+      setStatus("connecting");
+      tryConnect();
+    }
+  } catch {
+    // Network error, keep polling
+  }
 }
 
 // --- HLS callbacks ---
@@ -276,6 +288,30 @@ function onManifestParsed() {
 function onHlsError(_event, data) {
   if (data.fatal) {
     destroyHls();
+    // Check if stream was stopped via API
+    checkIfStreamStopped();
+  }
+}
+
+async function checkIfStreamStopped() {
+  if (!currentStreamId) return;
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`);
+    if (!res.ok) {
+      // Stream gone — close player
+      showOverlay("Sändningen har avslutats", false);
+      setTimeout(closePlayer, 2500);
+      return;
+    }
+    const stream = await res.json();
+    if (stream.status === "stopped") {
+      showOverlay("Sändningen har avslutats", false);
+      setTimeout(closePlayer, 2500);
+    } else {
+      // Stream still exists but HLS failed — try reconnecting
+      setStatus("offline");
+    }
+  } catch {
     setStatus("offline");
   }
 }

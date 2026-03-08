@@ -173,6 +173,20 @@ main {
   animation: badge-pulse 1.5s ease-in-out infinite;
 }
 
+.stream-card-badge.stopped {
+  background: #555;
+}
+
+.stream-card.stopped {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.stream-card.stopped:hover {
+  background: var(--surface);
+  border-color: #222;
+}
+
 .stream-card-viewers {
   font-size: 0.75rem;
   color: var(--text-muted);
