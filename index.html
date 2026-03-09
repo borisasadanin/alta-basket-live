@@ -24,6 +24,20 @@
   </header>
 
   <main>
+    <!-- PIN entry view -->
+    <section id="pinView" class="hidden">
+      <div class="pin-container">
+        <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="pin-logo">
+        <h2 class="pin-title">Privat sändning</h2>
+        <p class="pin-desc">Ange koden för att se matcher</p>
+        <div class="pin-input-group">
+          <input type="tel" id="pinInput" maxlength="6" placeholder="000000" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+        </div>
+        <button id="pinSubmit" class="pin-btn">Öppna</button>
+        <p class="pin-error hidden" id="pinError">Fel kod — försök igen</p>
+      </div>
+    </section>
+
     <!-- Stream list view -->
     <section id="streamListView">
       <div class="stream-grid" id="streamGrid">

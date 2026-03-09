@@ -1,6 +1,13 @@
 // === Älta IF Basket — Stream List + HLS Player ===
 
+// --- Auth state ---
+let viewerToken = localStorage.getItem("viewerToken") || null;
+
 // --- DOM refs ---
+const pinView = document.getElementById("pinView");
+const pinInput = document.getElementById("pinInput");
+const pinSubmit = document.getElementById("pinSubmit");
+const pinError = document.getElementById("pinError");
 const streamListView = document.getElementById("streamListView");
 const streamGrid = document.getElementById("streamGrid");
 const emptyState = document.getElementById("emptyState");
@@ -44,9 +51,24 @@ let currentStreamId = null;
 // Stream List
 // ============================
 
+function authHeaders() {
+  const h = {};
+  if (viewerToken) h["Authorization"] = `Bearer ${viewerToken}`;
+  return h;
+}
+
 async function fetchStreams() {
   try {
-    const res = await fetch(`${CONFIG.API_URL}/api/streams`);
+    const res = await fetch(`${CONFIG.API_URL}/api/streams`, {
+      headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      // Token expired or invalid — show PIN screen
+      viewerToken = null;
+      localStorage.removeItem("viewerToken");
+      showPinScreen();
+      return null;
+    }
     if (!res.ok) throw new Error(res.status);
     return await res.json();
   } catch {
@@ -66,13 +88,13 @@ function renderStreamList(streams) {
   emptyState.classList.add("hidden");
   streamGrid.classList.remove("hidden");
 
-  const hasLive = streams.some((s) => s.status === "live" || s.status === "waiting");
+  const hasLive = streams.some((s) => s.status === "live");
   statusDot.className = hasLive ? "status-dot live" : "status-dot offline";
 
   const badgeMap = {
-    live: { cls: "live", text: "LIVE" },
+    live: { cls: "live", text: "SÄNDER LIVE" },
     waiting: { cls: "waiting", text: "STARTAR..." },
-    stopped: { cls: "stopped", text: "AVSLUTAD" },
+    stopped: { cls: "stopped", text: "AVBRUTEN" },
   };
 
   streamGrid.innerHTML = streams
@@ -253,7 +275,9 @@ function stopStreamPolling() {
 async function pollCurrentStream() {
   if (!currentStreamId) return;
   try {
-    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`);
+    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) {
       // Stream gone
       showOverlay("Sändningen har avslutats", false);
@@ -296,7 +320,9 @@ function onHlsError(_event, data) {
 async function checkIfStreamStopped() {
   if (!currentStreamId) return;
   try {
-    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`);
+    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`, {
+      headers: authHeaders(),
+    });
     if (!res.ok) {
       // Stream gone — close player
       showOverlay("Sändningen har avslutats", false);
@@ -540,11 +566,113 @@ function bindEvents() {
   });
 }
 
+// ============================
+// PIN / Auth
+// ============================
+
+function showPinScreen() {
+  stopListPolling();
+  streamListView.classList.add("hidden");
+  playerView.classList.add("hidden");
+  pinView.classList.remove("hidden");
+  pinInput.value = "";
+  pinError.classList.add("hidden");
+  pinInput.focus();
+}
+
+function hidePinScreen() {
+  pinView.classList.add("hidden");
+  streamListView.classList.remove("hidden");
+}
+
+async function submitPin() {
+  const pin = pinInput.value.trim();
+  if (!pin) return;
+
+  pinSubmit.disabled = true;
+  pinError.classList.add("hidden");
+
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/api/auth/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin }),
+    });
+
+    if (!res.ok) {
+      pinError.classList.remove("hidden");
+      pinError.classList.remove("shake");
+      // Trigger reflow for animation restart
+      void pinError.offsetWidth;
+      pinError.classList.add("shake");
+      pinInput.select();
+      pinSubmit.disabled = false;
+      return;
+    }
+
+    const data = await res.json();
+    viewerToken = data.token;
+    localStorage.setItem("viewerToken", viewerToken);
+
+    hidePinScreen();
+    startListPolling();
+  } catch {
+    pinError.textContent = "Kunde inte ansluta — försök igen";
+    pinError.classList.remove("hidden");
+  }
+  pinSubmit.disabled = false;
+}
+
+function bindPinEvents() {
+  pinSubmit.addEventListener("click", submitPin);
+  pinInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitPin();
+  });
+}
+
+async function checkAuthAndStart() {
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/api/auth/status`);
+    const data = await res.json();
+
+    if (!data.pinRequired) {
+      // No PIN needed — go straight to streams
+      hidePinScreen();
+      startListPolling();
+      return;
+    }
+
+    // PIN required — check if we have a valid token
+    if (viewerToken) {
+      const testRes = await fetch(`${CONFIG.API_URL}/api/streams`, {
+        headers: authHeaders(),
+      });
+      if (testRes.ok) {
+        // Token still valid
+        hidePinScreen();
+        startListPolling();
+        return;
+      }
+      // Token expired
+      viewerToken = null;
+      localStorage.removeItem("viewerToken");
+    }
+
+    // Show PIN screen
+    showPinScreen();
+  } catch {
+    // Backend unreachable — show streams anyway (will show empty/error)
+    hidePinScreen();
+    startListPolling();
+  }
+}
+
 // --- Init ---
 
 function init() {
   bindEvents();
-  startListPolling();
+  bindPinEvents();
+  checkAuthAndStart();
 }
 
 init();
