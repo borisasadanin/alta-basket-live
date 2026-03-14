@@ -36,6 +36,11 @@ function setStatus(status) {
       dom.liveBadge.className = "live-badge offline";
       showOverlay("Ingen s\u00e4ndning just nu", false);
       break;
+    case "paused":
+      dom.liveBadge.textContent = "PAUS";
+      dom.liveBadge.className = "live-badge paused";
+      showOverlay("S\u00e4ndningen \u00e4r pausad \u2014 \u00e5terkommer snart", false);
+      break;
     case "vod":
       dom.liveBadge.textContent = "REPRIS";
       dom.liveBadge.className = "live-badge vod";
@@ -88,16 +93,17 @@ function startHls() {
   state.hls = new Hls({
     enableWorker: true,
     lowLatencyMode: false,
-    maxBufferLength: 10,
+    maxBufferLength: 15,
     maxMaxBufferLength: 30,
-    manifestLoadingTimeOut: 8000,
-    manifestLoadingMaxRetry: 3,
-    manifestLoadingRetryDelay: 2000,
-    levelLoadingTimeOut: 8000,
-    levelLoadingMaxRetry: 3,
-    fragLoadingTimeOut: 8000,
-    fragLoadingMaxRetry: 3,
-    liveSyncDurationCount: 2,
+    manifestLoadingTimeOut: 10000,
+    manifestLoadingMaxRetry: 6,
+    manifestLoadingRetryDelay: 1000,
+    levelLoadingTimeOut: 10000,
+    levelLoadingMaxRetry: 6,
+    fragLoadingTimeOut: 10000,
+    fragLoadingMaxRetry: 6,
+    liveSyncDurationCount: 3,
+    liveBackBufferLength: 30,
   });
 
   state.hls.loadSource(state.currentStreamUrl);
@@ -222,7 +228,25 @@ function onHlsError(_event, data) {
     return;
   }
 
-  // NETWORK_ERROR and other fatal errors
+  // NETWORK_ERROR — try restarting HLS before giving up
+  if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+    state.hlsReconnectAttempts++;
+    if (state.hlsReconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+      setStatus("connecting");
+      showOverlay(
+        `Återansluter (${state.hlsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})\u2026`,
+        true
+      );
+      setTimeout(() => {
+        if (state.currentStreamUrl) {
+          startHls();
+        }
+      }, 2000);
+      return;
+    }
+  }
+
+  // Exhausted retries or other fatal errors
   destroyHls();
   checkIfStreamStopped();
 }
@@ -566,6 +590,12 @@ async function pollCurrentStream() {
     if (stream.status === "stopped") {
       showOverlay("S\u00e4ndningen har avslutats", false);
       setTimeout(closePlayer, 2500);
+    } else if (stream.status === "paused") {
+      if (state.currentStatus !== "paused") {
+        setStatus("paused");
+        // Destroy current HLS to free resources while paused
+        destroyHls();
+      }
     } else if (stream.status === "live" && state.currentStatus !== "live") {
       setStatus("connecting");
       tryConnect();

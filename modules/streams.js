@@ -42,21 +42,23 @@ function renderStreamList(streams) {
   dom.emptyState.classList.add("hidden");
   dom.streamGrid.classList.remove("hidden");
 
-  const hasLive = streams.some((s) => s.status === "live");
+  const hasLive = streams.some((s) => s.status === "live" || s.status === "paused");
   dom.statusDot.className = hasLive ? "status-dot live" : "status-dot offline";
 
   const badgeMap = {
     live: { cls: "live", text: "S\u00c4NDER LIVE" },
     waiting: { cls: "waiting", text: "STARTAR..." },
     stopped: { cls: "stopped", text: "AVBRUTEN" },
+    paused: { cls: "paused", text: "PAUSAD" },
   };
 
   dom.streamGrid.innerHTML = streams
     .map((s) => {
       const badge = badgeMap[s.status] || badgeMap.waiting;
       const isStopped = s.status === "stopped";
+      const isPaused = s.status === "paused";
       return `
-    <button class="stream-card ${isStopped ? "stopped" : ""}" data-hls="${escapeHtml(s.hlsUrl)}" data-name="${escapeHtml(s.name)}" data-id="${escapeHtml(s.id)}" ${isStopped ? "disabled" : ""}>
+    <button class="stream-card ${isStopped ? "stopped" : ""}${isPaused ? " paused" : ""}" data-hls="${escapeHtml(s.hlsUrl)}" data-name="${escapeHtml(s.name)}" data-id="${escapeHtml(s.id)}" ${isStopped ? "disabled" : ""}>
       <div class="stream-card-top">
         <div class="stream-card-badge ${badge.cls}">${escapeHtml(badge.text)}</div>
         ${s.viewers > 0 ? `<div class="stream-card-viewers">${escapeHtml(String(s.viewers))} tittare</div>` : ""}
@@ -72,12 +74,7 @@ function renderStreamList(streams) {
     });
   });
 
-  // Auto-open if exactly one live stream and no player currently open
-  const liveStreams = streams.filter((s) => s.status === "live");
-  if (liveStreams.length === 1 && !state.currentStreamId) {
-    const s = liveStreams[0];
-    openPlayer(s.hlsUrl, s.name, s.id);
-  }
+  // No auto-open — user always picks which stream to watch
 }
 
 // ============================

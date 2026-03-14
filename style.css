@@ -333,6 +333,22 @@ main {
   background: #555;
 }
 
+.stream-card-badge.paused {
+  background: #f59e0b;
+  color: #000;
+  animation: badge-pulse 3s ease-in-out infinite;
+}
+
+.stream-card.paused {
+  border-color: #f59e0b33;
+  cursor: pointer;
+}
+
+.stream-card.paused:hover {
+  background: var(--surface-hover);
+  border-color: #f59e0b88;
+}
+
 .stream-card.stopped {
   opacity: 0.5;
   cursor: default;
@@ -678,6 +694,12 @@ main {
 .live-badge.vod {
   background: var(--gold);
   color: #000;
+}
+
+.live-badge.paused {
+  background: #f59e0b;
+  color: #000;
+  animation: badge-pulse 3s ease-in-out infinite;
 }
 
 .live-badge.error {
