@@ -1,6 +1,6 @@
-// === Älta Courtside — Configuration ===
+// === Configuration ===
 
-const CONFIG = {
+export const CONFIG = {
   // Backend API URL
   API_URL: "https://borispriv-altabasketapi.eyevinn-web-runner.auto.prod.osaas.io",
 

@@ -4,30 +4,46 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0a0a0a">
-  <meta name="description" content="Följ Älta IF Basket live — streama matcher direkt från hallen.">
-  <title>Älta IF Basket — Live</title>
-  <link rel="icon" href="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" type="image/png">
+  <meta name="description" content="Följ Älta Courtside live — streama matcher direkt från hallen.">
+  <meta property="og:title" content="Älta Courtside — Live">
+  <meta property="og:description" content="Följ Älta Courtside live — streama matcher direkt från hallen.">
+  <meta property="og:image" content="https://altacourtside.se/icon.png">
+  <meta property="og:url" content="https://altacourtside.se">
+  <meta property="og:type" content="website">
+  <title>Älta Courtside — Live</title>
+  <link rel="icon" href="icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <div class="header-inner">
-      <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="logo">
+      <img src="icon.png" alt="Älta IF" class="logo">
       <div class="header-text">
-        <h1>Älta IF Basket</h1>
+        <h1>Älta Courtside</h1>
         <div class="status-row">
           <span class="status-dot offline" id="statusDot"></span>
           <p class="subtitle" id="headerStatus">Live</p>
         </div>
       </div>
+      <button class="header-logout-btn hidden" id="headerLogout" aria-label="Logga ut">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </div>
+    <nav class="tab-nav" id="tabNav">
+      <button class="tab-btn active" data-tab="live">Live</button>
+      <button class="tab-btn" data-tab="vod">Repriser</button>
+      <button class="tab-btn hidden" data-tab="admin" id="adminTab">Admin</button>
+    </nav>
   </header>
 
   <main>
+    <div id="offlineBanner" class="offline-banner hidden">Ingen internetanslutning</div>
+
     <!-- PIN entry view -->
     <section id="pinView" class="hidden">
       <div class="pin-container">
-        <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="pin-logo">
+        <img src="icon.png" alt="Älta IF" class="pin-logo">
         <h2 class="pin-title">Privat sändning</h2>
         <p class="pin-desc">Ange koden för att se matcher</p>
         <div class="pin-input-group">
@@ -44,9 +60,21 @@
         <!-- Filled by JS -->
       </div>
       <div class="empty-state" id="emptyState">
-        <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="empty-logo">
+        <img src="icon.png" alt="Älta IF" class="empty-logo">
         <p>Ingen sänder just nu</p>
         <p class="empty-sub">Sändningen visas här automatiskt när den startar</p>
+      </div>
+    </section>
+
+    <!-- VOD list view -->
+    <section id="vodListView" class="hidden">
+      <div class="vod-grid" id="vodGrid">
+        <!-- Filled by JS -->
+      </div>
+      <div class="empty-state" id="vodEmptyState">
+        <img src="icon.png" alt="Älta IF" class="empty-logo">
+        <p>Inga repriser ännu</p>
+        <p class="empty-sub">Inspelade matcher visas här efter sändning</p>
       </div>
     </section>
 
@@ -54,7 +82,7 @@
     <section id="playerView" class="hidden">
       <button class="back-btn" id="backBtn">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Alla sändningar
+        <span id="backBtnText">Alla sändningar</span>
       </button>
 
       <div class="player-container">
@@ -62,6 +90,15 @@
           <video id="video" playsinline></video>
 
           <div class="controls" id="controls">
+            <div class="progress-bar-container" id="progressContainer">
+              <span class="time-display" id="timeElapsed">0:00</span>
+              <div class="progress-bar" id="progressBar">
+                <div class="progress-buffered" id="progressBuffered"></div>
+                <div class="progress-filled" id="progressFilled"></div>
+                <div class="progress-handle" id="progressHandle"></div>
+              </div>
+              <span class="time-display" id="timeDuration">0:00</span>
+            </div>
             <button id="playBtn" class="control-btn" aria-label="Spela">
               <svg class="icon icon-play" viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
               <svg class="icon icon-pause" viewBox="0 0 24 24" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
@@ -86,6 +123,13 @@
               <div class="quality-menu" id="qualityMenu"></div>
             </div>
 
+            <button id="pipBtn" class="control-btn" aria-label="Bild-i-bild" style="display:none">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <rect x="12" y="9" width="8" height="6" rx="1" fill="currentColor" opacity="0.3"/>
+              </svg>
+            </button>
+
             <button id="fullscreenBtn" class="control-btn" aria-label="Helskärm">
               <svg class="icon icon-fs-enter" viewBox="0 0 24 24"><polyline points="15,3 21,3 21,9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="9,21 3,21 3,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="21,3 14,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="3,21 10,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
               <svg class="icon icon-fs-exit" viewBox="0 0 24 24" style="display:none"><polyline points="4,14 10,14 10,20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="20,10 14,10 14,4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="14,10 21,3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="10,14 3,21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -94,7 +138,7 @@
 
           <div class="overlay" id="overlay">
             <div class="overlay-content">
-              <img src="https://cdn06.svenskalag.se/img/clubmarks/32692.png?8" alt="Älta IF" class="overlay-logo">
+              <img src="icon.png" alt="Älta IF" class="overlay-logo">
               <div class="spinner" id="overlaySpinner"></div>
               <p class="overlay-text">Ansluter till sändningen…</p>
             </div>
@@ -107,14 +151,26 @@
         <p id="streamDesc">Följ matchen live.</p>
       </section>
     </section>
+
+    <!-- Admin view (hidden until admin login) -->
+    <section id="adminView" class="hidden">
+      <div class="admin-header">
+        <h2 class="admin-title">Admin</h2>
+        <button class="admin-logout-btn" id="adminLogout">Logga ut</button>
+      </div>
+      <div class="admin-storage-summary" id="adminStorageSummary">
+        <div class="spinner"></div>
+      </div>
+      <div class="admin-vod-list" id="adminVodList"></div>
+    </section>
+
   </main>
 
   <footer>
-    <p>&copy; 2026 Älta IF Basket</p>
+    <p>&copy; 2026 Älta Courtside</p>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-  <script src="config.js"></script>
-  <script src="player.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" integrity="sha384-9v3HcdYrO3D+OPDTjZ40RXocgE4GtXVCd3/mCS62JsM93JXgI1afJVuwjFvsu6ni" crossorigin="anonymous"></script>
+  <script type="module" src="player.js"></script>
 </body>
 </html>

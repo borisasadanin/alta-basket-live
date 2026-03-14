@@ -1,0 +1,19 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required files exist
+        run: |
+          test -f index.html
+          test -f style.css
+          test -f player.js
+          test -f config.js
+      - name: Validate HTML
+        run: |
+          # Basic syntax check — ensure index.html is well-formed
+          grep -q '<html' index.html
+          grep -q '</html>' index.html
+          echo "HTML structure OK"

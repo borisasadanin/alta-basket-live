@@ -1,4 +1,4 @@
-/* === Älta IF Basket — Live === */
+/* === Älta Courtside — Live === */
 
 :root {
   --bg: #0a0a0a;
@@ -59,6 +59,7 @@ header {
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  color: var(--gold);
 }
 
 .status-row {
@@ -106,6 +107,57 @@ header {
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+/* --- Tab Navigation --- */
+
+.tab-nav {
+  max-width: 960px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0;
+  padding-top: 10px;
+}
+
+.tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s;
+}
+
+.tab-btn::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: transparent;
+  border-radius: 1px;
+  transition: background 0.2s, left 0.2s, right 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--gold);
+}
+
+.tab-btn.active::after {
+  background: var(--gold);
+  left: 10%;
+  right: 10%;
 }
 
 /* --- Main --- */
@@ -301,6 +353,80 @@ main {
   font-weight: 600;
 }
 
+/* --- VOD list --- */
+
+.vod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.vod-card {
+  background: var(--surface);
+  border: 1px solid #222;
+  border-radius: var(--radius);
+  padding: 20px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: background 0.15s, border-color 0.15s;
+  text-align: left;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.vod-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--gold-dim);
+}
+
+.vod-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.vod-card-badge {
+  color: #000;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--gold);
+}
+
+.vod-card-duration {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.vod-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.vod-card-teams {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.vod-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.vod-card-camera {
+  font-style: italic;
+}
+
 /* Empty state */
 
 .empty-state {
@@ -380,6 +506,7 @@ main {
   left: 0;
   right: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
@@ -391,6 +518,107 @@ main {
 .video-wrapper:hover .controls,
 .video-wrapper.show-controls .controls {
   opacity: 1;
+}
+
+/* Progress bar */
+
+.progress-bar-container {
+  width: 100%;
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+.time-display {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.time-display:last-of-type {
+  text-align: right;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  position: relative;
+  cursor: pointer;
+  transition: height 0.1s;
+}
+
+.progress-buffered {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  width: 0%;
+  pointer-events: none;
+}
+
+.progress-filled {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: var(--gold);
+  border-radius: 2px;
+  width: 0%;
+  pointer-events: none;
+  transition: width 0.15s linear;
+}
+
+.progress-handle {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 12px;
+  height: 12px;
+  background: var(--gold);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+/* VOD: interactive — show handle on hover, expand track */
+.progress-bar-container.vod .progress-bar:hover,
+.progress-bar-container.vod.seeking .progress-bar {
+  height: 6px;
+}
+
+.progress-bar-container.vod .progress-bar:hover .progress-handle,
+.progress-bar-container.vod.seeking .progress-handle {
+  opacity: 1;
+}
+
+/* Live: non-interactive — no pointer, no handle, red bar */
+.progress-bar-container.live .progress-bar {
+  cursor: default;
+}
+
+.progress-bar-container.live .progress-handle {
+  display: none;
+}
+
+.progress-bar-container.live .progress-filled {
+  background: var(--red);
+  opacity: 0.7;
+}
+
+/* Disable transition during drag */
+.progress-bar-container.seeking .progress-filled {
+  transition: none;
 }
 
 .control-btn {
@@ -445,6 +673,11 @@ main {
   background: var(--gold-dim);
   color: #fff;
   animation: badge-pulse 1.5s ease-in-out infinite;
+}
+
+.live-badge.vod {
+  background: var(--gold);
+  color: #000;
 }
 
 .live-badge.error {
@@ -646,6 +879,11 @@ footer {
   padding: 14px 24px;
 }
 
+.video-wrapper:fullscreen .progress-bar-container,
+.video-wrapper:-webkit-full-screen .progress-bar-container {
+  padding-bottom: 6px;
+}
+
 /* --- Responsive --- */
 
 @media (max-width: 600px) {
@@ -666,7 +904,8 @@ footer {
     padding: 12px 8px;
   }
 
-  .stream-grid {
+  .stream-grid,
+  .vod-grid {
     grid-template-columns: 1fr;
     gap: 10px;
   }
@@ -689,6 +928,16 @@ footer {
     gap: 4px;
   }
 
+  .progress-bar-container {
+    gap: 6px;
+    padding-bottom: 2px;
+  }
+
+  .time-display {
+    font-size: 0.65rem;
+    min-width: 30px;
+  }
+
   .icon {
     width: 20px;
     height: 20px;
@@ -702,6 +951,221 @@ footer {
   .quality-btn {
     font-size: 0.7rem;
     padding: 3px 8px;
+  }
+}
+
+/* --- Header logout button --- */
+
+.header-logout-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  opacity: 0.5;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.header-logout-btn:hover {
+  opacity: 1;
+  color: var(--red);
+}
+
+/* --- Admin view --- */
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.admin-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.admin-logout-btn {
+  background: none;
+  border: 1px solid #444;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.admin-logout-btn:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.admin-storage-summary {
+  background: var(--surface);
+  border: 1px solid #222;
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.storage-bar-container {
+  margin-top: 12px;
+}
+
+.storage-bar {
+  width: 100%;
+  height: 8px;
+  background: #222;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.storage-bar-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.storage-bar-fill.warning {
+  background: #e67e22;
+}
+
+.storage-bar-fill.danger {
+  background: var(--red);
+}
+
+.storage-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.storage-total {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.storage-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.admin-vod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-vod-item {
+  background: var(--surface);
+  border: 1px solid #222;
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-vod-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.admin-vod-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-vod-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.admin-vod-size {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+  min-width: 70px;
+  text-align: right;
+}
+
+.admin-vod-delete {
+  background: none;
+  border: 1px solid #444;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.admin-vod-delete:hover {
+  border-color: var(--red);
+  color: var(--red);
+  background: rgba(231, 76, 60, 0.1);
+}
+
+.admin-vod-delete:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.admin-vod-delete.confirming {
+  border-color: var(--red);
+  color: #fff;
+  background: var(--red);
+}
+
+@media (max-width: 600px) {
+  .admin-vod-item {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-vod-size {
+    text-align: left;
+  }
+
+  .admin-vod-delete {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+/* Offline banner */
+
+.offline-banner {
+  background: var(--red);
+  color: #fff;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+/* Hide volume slider on touch devices */
+@media (pointer: coarse) {
+  .volume-slider {
+    display: none;
   }
 }
 

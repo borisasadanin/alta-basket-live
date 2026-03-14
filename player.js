@@ -1,678 +1,167 @@
-// === Älta IF Basket — Stream List + HLS Player ===
+// === Älta Courtside — Entry Point ===
+// Orchestrates all modules. No business logic lives here.
 
-// --- Auth state ---
-let viewerToken = localStorage.getItem("viewerToken") || null;
-
-// --- DOM refs ---
-const pinView = document.getElementById("pinView");
-const pinInput = document.getElementById("pinInput");
-const pinSubmit = document.getElementById("pinSubmit");
-const pinError = document.getElementById("pinError");
-const streamListView = document.getElementById("streamListView");
-const streamGrid = document.getElementById("streamGrid");
-const emptyState = document.getElementById("emptyState");
-const playerView = document.getElementById("playerView");
-const backBtn = document.getElementById("backBtn");
-
-const video = document.getElementById("video");
-const wrapper = document.getElementById("videoWrapper");
-const overlay = document.getElementById("overlay");
-const overlayText = overlay.querySelector(".overlay-text");
-const overlaySpinner = document.getElementById("overlaySpinner");
-const playBtn = document.getElementById("playBtn");
-const muteBtn = document.getElementById("muteBtn");
-const volumeSlider = document.getElementById("volumeSlider");
-const fullscreenBtn = document.getElementById("fullscreenBtn");
-const qualityBtn = document.getElementById("qualityBtn");
-const qualityLabel = document.getElementById("qualityLabel");
-const qualityMenu = document.getElementById("qualityMenu");
-const liveBadge = document.getElementById("liveBadge");
-const statusDot = document.getElementById("statusDot");
-const streamTitle = document.getElementById("streamTitle");
-const streamDesc = document.getElementById("streamDesc");
-
-const iconPlay = playBtn.querySelector(".icon-play");
-const iconPause = playBtn.querySelector(".icon-pause");
-const iconVol = muteBtn.querySelector(".icon-vol");
-const iconMuted = muteBtn.querySelector(".icon-muted");
-const iconFsEnter = fullscreenBtn.querySelector(".icon-fs-enter");
-const iconFsExit = fullscreenBtn.querySelector(".icon-fs-exit");
-
-let hls = null;
-let controlsTimeout = null;
-let streamPollTimer = null;
-let listPollTimer = null;
-let viewerHeartbeatTimer = null;
-let currentStatus = "offline";
-let currentStreamUrl = null;
-let currentStreamId = null;
+import { state, dom, initDom } from "./modules/state.js";
+import { initAuth, checkAuthAndStart } from "./modules/auth.js";
+import {
+  initPlayer,
+  closePlayer,
+  startStreamPolling,
+  stopStreamPolling,
+  startViewerHeartbeat,
+  stopViewerHeartbeat,
+  pollCurrentStream,
+} from "./modules/player.js";
+import { initStreams, startListPolling, stopListPolling } from "./modules/streams.js";
+import { initVod, startVodPolling, stopVodPolling } from "./modules/vod.js";
+import {
+  initAdmin,
+  activateAdmin,
+  deactivateAdmin,
+  loadAdminStorage,
+  checkAdminSession,
+} from "./modules/admin.js";
 
 // ============================
-// Stream List
+// Tab Navigation
 // ============================
 
-function authHeaders() {
-  const h = {};
-  if (viewerToken) h["Authorization"] = `Bearer ${viewerToken}`;
-  return h;
-}
+function switchTab(tab) {
+  if (tab === state.activeTab) return;
+  state.activeTab = tab;
 
-async function fetchStreams() {
-  try {
-    const res = await fetch(`${CONFIG.API_URL}/api/streams`, {
-      headers: authHeaders(),
-    });
-    if (res.status === 401) {
-      // Token expired or invalid — show PIN screen
-      viewerToken = null;
-      localStorage.removeItem("viewerToken");
-      showPinScreen();
-      return null;
-    }
-    if (!res.ok) throw new Error(res.status);
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
-function renderStreamList(streams) {
-  if (!streams || streams.length === 0) {
-    streamGrid.innerHTML = "";
-    streamGrid.classList.add("hidden");
-    emptyState.classList.remove("hidden");
-    statusDot.className = "status-dot offline";
-    return;
-  }
-
-  emptyState.classList.add("hidden");
-  streamGrid.classList.remove("hidden");
-
-  const hasLive = streams.some((s) => s.status === "live");
-  statusDot.className = hasLive ? "status-dot live" : "status-dot offline";
-
-  const badgeMap = {
-    live: { cls: "live", text: "SÄNDER LIVE" },
-    waiting: { cls: "waiting", text: "STARTAR..." },
-    stopped: { cls: "stopped", text: "AVBRUTEN" },
-  };
-
-  streamGrid.innerHTML = streams
-    .map((s) => {
-      const badge = badgeMap[s.status] || badgeMap.waiting;
-      const isStopped = s.status === "stopped";
-      return `
-    <button class="stream-card ${isStopped ? "stopped" : ""}" data-hls="${s.hlsUrl}" data-name="${s.name}" data-id="${s.id}" ${isStopped ? "disabled" : ""}>
-      <div class="stream-card-top">
-        <div class="stream-card-badge ${badge.cls}">${badge.text}</div>
-        ${s.viewers > 0 ? `<div class="stream-card-viewers">${s.viewers} tittare</div>` : ""}
-      </div>
-      <div class="stream-card-name">${s.name}</div>
-    </button>`;
-    })
-    .join("");
-
-  streamGrid.querySelectorAll(".stream-card:not([disabled])").forEach((card) => {
-    card.addEventListener("click", () => {
-      openPlayer(card.dataset.hls, card.dataset.name, card.dataset.id);
-    });
+  // Update tab buttons
+  dom.tabNav.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tab);
   });
-}
 
-async function pollStreamList() {
-  const streams = await fetchStreams();
-  if (streams !== null) {
-    renderStreamList(streams);
-  }
-}
-
-function startListPolling() {
-  clearInterval(listPollTimer);
-  pollStreamList();
-  listPollTimer = setInterval(pollStreamList, CONFIG.LIST_POLL_INTERVAL);
-}
-
-function stopListPolling() {
-  clearInterval(listPollTimer);
-}
-
-// ============================
-// Player
-// ============================
-
-function openPlayer(hlsUrl, name, streamId) {
-  currentStreamUrl = hlsUrl;
-  currentStreamId = streamId;
+  // Hide all views
   stopListPolling();
+  stopVodPolling();
+  dom.streamListView.classList.add("hidden");
+  dom.vodListView.classList.add("hidden");
+  dom.adminView.classList.add("hidden");
 
-  streamListView.classList.add("hidden");
-  playerView.classList.remove("hidden");
-
-  streamTitle.textContent = name;
-  streamDesc.textContent = "Följ matchen live.";
-
-  setStatus("connecting");
-  tryConnect();
-  startStreamPolling();
-  startViewerHeartbeat();
-}
-
-function closePlayer() {
-  destroyHls();
-  stopStreamPolling();
-  stopViewerHeartbeat();
-  currentStreamUrl = null;
-  currentStreamId = null;
-
-  playerView.classList.add("hidden");
-  streamListView.classList.remove("hidden");
-
-  setStatus("offline");
-  startListPolling();
-}
-
-// --- Status ---
-
-function setStatus(status) {
-  if (status === currentStatus) return;
-  currentStatus = status;
-
-  switch (status) {
-    case "connecting":
-      liveBadge.textContent = "ANSLUTER";
-      liveBadge.className = "live-badge connecting";
-      showOverlay("Ansluter till sändningen\u2026", true);
-      break;
-    case "live":
-      liveBadge.textContent = "LIVE";
-      liveBadge.className = "live-badge live";
-      hideOverlay();
-      break;
-    case "offline":
-      liveBadge.textContent = "OFFLINE";
-      liveBadge.className = "live-badge offline";
-      showOverlay("Ingen sändning just nu", false);
-      break;
+  if (tab === "live") {
+    dom.streamListView.classList.remove("hidden");
+    startListPolling();
+  } else if (tab === "vod") {
+    dom.vodListView.classList.remove("hidden");
+    startVodPolling();
+  } else if (tab === "admin") {
+    dom.adminView.classList.remove("hidden");
+    loadAdminStorage();
   }
 }
 
-// --- HLS ---
+// ============================
+// Offline / Online / Visibility
+// ============================
 
-function tryConnect() {
-  if (!currentStreamUrl) return;
-
-  if (Hls.isSupported()) {
-    startHls();
-  } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-    startNative();
-  } else {
-    showOverlay("Din webbläsare stöder inte HLS-uppspelning", false);
-  }
-}
-
-function startHls() {
-  destroyHls();
-
-  hls = new Hls({
-    enableWorker: true,
-    lowLatencyMode: false,
-    maxBufferLength: 10,
-    maxMaxBufferLength: 30,
-    manifestLoadingTimeOut: 8000,
-    manifestLoadingMaxRetry: 1,
-    manifestLoadingRetryDelay: 2000,
-    levelLoadingTimeOut: 8000,
-    levelLoadingMaxRetry: 1,
-    fragLoadingTimeOut: 8000,
-    fragLoadingMaxRetry: 1,
+function bindGlobalEvents() {
+  // Tab navigation
+  dom.tabNav.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  hls.loadSource(currentStreamUrl);
-  hls.attachMedia(video);
-
-  hls.on(Hls.Events.MANIFEST_PARSED, onManifestParsed);
-  hls.on(Hls.Events.ERROR, onHlsError);
-  hls.on(Hls.Events.LEVEL_SWITCHED, onLevelSwitched);
-}
-
-function startNative() {
-  video.src = currentStreamUrl;
-  video.addEventListener(
-    "loadedmetadata",
-    () => {
-      setStatus("live");
-      buildNativeQualityMenu();
-    },
-    { once: true }
-  );
-  video.addEventListener(
-    "error",
-    () => {
-      setStatus("offline");
-    },
-    { once: true }
-  );
-}
-
-function destroyHls() {
-  if (hls) {
-    hls.destroy();
-    hls = null;
-  }
-}
-
-// --- Stream polling (when player is open but offline) ---
-
-function startStreamPolling() {
-  clearInterval(streamPollTimer);
-  streamPollTimer = setInterval(pollCurrentStream, 5000);
-}
-
-function stopStreamPolling() {
-  clearInterval(streamPollTimer);
-}
-
-async function pollCurrentStream() {
-  if (!currentStreamId) return;
-  try {
-    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`, {
-      headers: authHeaders(),
-    });
-    if (!res.ok) {
-      // Stream gone
-      showOverlay("Sändningen har avslutats", false);
-      setTimeout(closePlayer, 2500);
-      return;
-    }
-    const stream = await res.json();
-    if (stream.status === "stopped") {
-      showOverlay("Sändningen har avslutats", false);
-      setTimeout(closePlayer, 2500);
-    } else if (stream.status === "live" && currentStatus !== "live") {
-      setStatus("connecting");
-      tryConnect();
-    }
-  } catch {
-    // Network error, keep polling
-  }
-}
-
-// --- HLS callbacks ---
-
-function onManifestParsed() {
-  setStatus("live");
-  buildQualityMenu();
-  video.play().catch(() => {
-    video.muted = true;
-    video.play().catch(() => {});
-    updateMuteButton();
+  // Offline/online indicator
+  const offlineBanner = document.getElementById("offlineBanner");
+  window.addEventListener("offline", () => {
+    offlineBanner.classList.remove("hidden");
   });
-}
-
-function onHlsError(_event, data) {
-  if (data.fatal) {
-    destroyHls();
-    // Check if stream was stopped via API
-    checkIfStreamStopped();
-  }
-}
-
-async function checkIfStreamStopped() {
-  if (!currentStreamId) return;
-  try {
-    const res = await fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}`, {
-      headers: authHeaders(),
-    });
-    if (!res.ok) {
-      // Stream gone — close player
-      showOverlay("Sändningen har avslutats", false);
-      setTimeout(closePlayer, 2500);
-      return;
-    }
-    const stream = await res.json();
-    if (stream.status === "stopped") {
-      showOverlay("Sändningen har avslutats", false);
-      setTimeout(closePlayer, 2500);
-    } else {
-      // Stream still exists but HLS failed — try reconnecting
-      setStatus("offline");
-    }
-  } catch {
-    setStatus("offline");
-  }
-}
-
-function onLevelSwitched(_event, data) {
-  if (hls && hls.autoLevelEnabled) {
-    const level = hls.levels[data.level];
-    qualityLabel.textContent = `Auto (${level.height}p)`;
-  }
-  updateActiveQuality();
-}
-
-// --- Quality menu ---
-
-function buildQualityMenu() {
-  qualityMenu.innerHTML = "";
-
-  const autoBtn = document.createElement("button");
-  autoBtn.className = "quality-option active";
-  autoBtn.textContent = "Auto";
-  autoBtn.dataset.level = "-1";
-  autoBtn.addEventListener("click", () => selectQuality(-1));
-  qualityMenu.appendChild(autoBtn);
-
-  hls.levels.forEach((level, i) => {
-    const btn = document.createElement("button");
-    btn.className = "quality-option";
-    btn.textContent = `${level.height}p`;
-    btn.dataset.level = i;
-    btn.addEventListener("click", () => selectQuality(i));
-    qualityMenu.appendChild(btn);
-  });
-}
-
-function buildNativeQualityMenu() {
-  qualityMenu.innerHTML = "";
-  const btn = document.createElement("button");
-  btn.className = "quality-option active";
-  btn.textContent = "Auto";
-  qualityMenu.appendChild(btn);
-}
-
-function selectQuality(levelIndex) {
-  hls.currentLevel = levelIndex;
-  if (levelIndex === -1) {
-    hls.currentLevel = -1;
-    qualityLabel.textContent = "Auto";
-  } else {
-    qualityLabel.textContent = `${hls.levels[levelIndex].height}p`;
-  }
-  updateActiveQuality();
-  qualityMenu.classList.remove("open");
-}
-
-function updateActiveQuality() {
-  if (!hls) return;
-  const currentLevel = hls.autoLevelEnabled ? -1 : hls.currentLevel;
-  qualityMenu.querySelectorAll(".quality-option").forEach((btn) => {
-    btn.classList.toggle(
-      "active",
-      parseInt(btn.dataset.level) === currentLevel
-    );
-  });
-}
-
-// --- Controls ---
-
-function togglePlay() {
-  if (video.paused) {
-    video.play();
-  } else {
-    video.pause();
-  }
-}
-
-function updatePlayButton() {
-  const playing = !video.paused;
-  iconPlay.style.display = playing ? "none" : "block";
-  iconPause.style.display = playing ? "block" : "none";
-}
-
-function toggleMute() {
-  video.muted = !video.muted;
-  volumeSlider.value = video.muted ? 0 : video.volume;
-  updateMuteButton();
-}
-
-function updateMuteButton() {
-  const muted = video.muted || video.volume === 0;
-  iconVol.style.display = muted ? "none" : "block";
-  iconMuted.style.display = muted ? "block" : "none";
-}
-
-function onVolumeChange() {
-  video.volume = parseFloat(volumeSlider.value);
-  video.muted = video.volume === 0;
-  updateMuteButton();
-}
-
-function toggleFullscreen() {
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
-    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-  } else {
-    (wrapper.requestFullscreen || wrapper.webkitRequestFullscreen).call(
-      wrapper
-    );
-  }
-}
-
-function updateFullscreenButton() {
-  const isFs = !!(
-    document.fullscreenElement || document.webkitFullscreenElement
-  );
-  iconFsEnter.style.display = isFs ? "none" : "block";
-  iconFsExit.style.display = isFs ? "block" : "none";
-}
-
-function showControls() {
-  wrapper.classList.add("show-controls");
-  clearTimeout(controlsTimeout);
-  controlsTimeout = setTimeout(() => {
-    if (!video.paused) {
-      wrapper.classList.remove("show-controls");
-    }
-  }, 3000);
-}
-
-// --- Overlay ---
-
-function hideOverlay() {
-  overlay.classList.add("hidden");
-}
-
-function showOverlay(msg, showSpinner) {
-  overlayText.textContent = msg;
-  overlay.classList.remove("hidden");
-  if (overlaySpinner) {
-    overlaySpinner.style.display = showSpinner ? "block" : "none";
-  }
-}
-
-// --- Viewer heartbeat ---
-
-function startViewerHeartbeat() {
-  stopViewerHeartbeat();
-  sendViewerHeartbeat();
-  viewerHeartbeatTimer = setInterval(sendViewerHeartbeat, 30_000);
-}
-
-function stopViewerHeartbeat() {
-  clearInterval(viewerHeartbeatTimer);
-}
-
-function sendViewerHeartbeat() {
-  if (!currentStreamId) return;
-  fetch(`${CONFIG.API_URL}/api/streams/${currentStreamId}/view`, {
-    method: "POST",
-  }).catch(() => {});
-}
-
-// --- Events ---
-
-function bindEvents() {
-  backBtn.addEventListener("click", closePlayer);
-
-  playBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    togglePlay();
-  });
-  muteBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleMute();
-  });
-  volumeSlider.addEventListener("input", onVolumeChange);
-  volumeSlider.addEventListener("click", (e) => e.stopPropagation());
-  fullscreenBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleFullscreen();
+  window.addEventListener("online", () => {
+    offlineBanner.classList.add("hidden");
   });
 
-  qualityBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    qualityMenu.classList.toggle("open");
-  });
-
-  document.addEventListener("click", () => {
-    qualityMenu.classList.remove("open");
-  });
-
-  video.addEventListener("play", updatePlayButton);
-  video.addEventListener("pause", updatePlayButton);
-  video.addEventListener("volumechange", updateMuteButton);
-
-  document.addEventListener("fullscreenchange", updateFullscreenButton);
-  document.addEventListener("webkitfullscreenchange", updateFullscreenButton);
-
-  wrapper.addEventListener("click", togglePlay);
-  wrapper.addEventListener("mousemove", showControls);
-  wrapper.addEventListener("touchstart", showControls);
-
-  document.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "INPUT") return;
-    if (playerView.classList.contains("hidden")) return;
-    switch (e.key) {
-      case " ":
-      case "k":
-        e.preventDefault();
-        togglePlay();
-        break;
-      case "m":
-        toggleMute();
-        break;
-      case "f":
-        toggleFullscreen();
-        break;
-      case "Escape":
-        closePlayer();
-        break;
-    }
-  });
-
+  // Visibility change — pause/resume polling
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && currentStreamUrl && currentStatus !== "live") {
-      checkStream();
-    }
-  });
-}
-
-// ============================
-// PIN / Auth
-// ============================
-
-function showPinScreen() {
-  stopListPolling();
-  streamListView.classList.add("hidden");
-  playerView.classList.add("hidden");
-  pinView.classList.remove("hidden");
-  pinInput.value = "";
-  pinError.classList.add("hidden");
-  pinInput.focus();
-}
-
-function hidePinScreen() {
-  pinView.classList.add("hidden");
-  streamListView.classList.remove("hidden");
-}
-
-async function submitPin() {
-  const pin = pinInput.value.trim();
-  if (!pin) return;
-
-  pinSubmit.disabled = true;
-  pinError.classList.add("hidden");
-
-  try {
-    const res = await fetch(`${CONFIG.API_URL}/api/auth/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pin }),
-    });
-
-    if (!res.ok) {
-      pinError.classList.remove("hidden");
-      pinError.classList.remove("shake");
-      // Trigger reflow for animation restart
-      void pinError.offsetWidth;
-      pinError.classList.add("shake");
-      pinInput.select();
-      pinSubmit.disabled = false;
-      return;
-    }
-
-    const data = await res.json();
-    viewerToken = data.token;
-    localStorage.setItem("viewerToken", viewerToken);
-
-    hidePinScreen();
-    startListPolling();
-  } catch {
-    pinError.textContent = "Kunde inte ansluta — försök igen";
-    pinError.classList.remove("hidden");
-  }
-  pinSubmit.disabled = false;
-}
-
-function bindPinEvents() {
-  pinSubmit.addEventListener("click", submitPin);
-  pinInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitPin();
-  });
-}
-
-async function checkAuthAndStart() {
-  try {
-    const res = await fetch(`${CONFIG.API_URL}/api/auth/status`);
-    const data = await res.json();
-
-    if (!data.pinRequired) {
-      // No PIN needed — go straight to streams
-      hidePinScreen();
-      startListPolling();
-      return;
-    }
-
-    // PIN required — check if we have a valid token
-    if (viewerToken) {
-      const testRes = await fetch(`${CONFIG.API_URL}/api/streams`, {
-        headers: authHeaders(),
-      });
-      if (testRes.ok) {
-        // Token still valid
-        hidePinScreen();
-        startListPolling();
-        return;
+    if (document.hidden) {
+      // Stop all polling to save resources in background tabs
+      stopListPolling();
+      stopVodPolling();
+      stopStreamPolling();
+      stopViewerHeartbeat();
+    } else {
+      // Resume relevant polling when tab becomes visible
+      if (!dom.playerView.classList.contains("hidden")) {
+        // Player is open
+        if (!state.isVodMode) {
+          startStreamPolling();
+          startViewerHeartbeat();
+          // Also check stream status immediately
+          if (state.currentStreamUrl && state.currentStatus !== "live") {
+            pollCurrentStream();
+          }
+        }
+      } else {
+        // No player open — resume list polling for the active tab
+        if (state.activeTab === "live") {
+          startListPolling();
+        } else if (state.activeTab === "vod") {
+          startVodPolling();
+        }
       }
-      // Token expired
-      viewerToken = null;
-      localStorage.removeItem("viewerToken");
     }
+  });
+}
 
-    // Show PIN screen
-    showPinScreen();
-  } catch {
-    // Backend unreachable — show streams anyway (will show empty/error)
-    hidePinScreen();
+// ============================
+// Player close handler
+// ============================
+
+function handleClosePlayer(wasVod) {
+  // Restore the correct tab view
+  dom.tabNav.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === (wasVod ? "vod" : "live"));
+  });
+  dom.streamListView.classList.add("hidden");
+  dom.vodListView.classList.add("hidden");
+  dom.adminView.classList.add("hidden");
+
+  if (wasVod) {
+    state.activeTab = "vod";
+    dom.vodListView.classList.remove("hidden");
+    startVodPolling();
+  } else {
+    state.activeTab = "live";
+    dom.streamListView.classList.remove("hidden");
     startListPolling();
   }
 }
 
-// --- Init ---
+// ============================
+// Init
+// ============================
 
 function init() {
-  bindEvents();
-  bindPinEvents();
+  // 1. Initialise DOM references
+  initDom();
+
+  // 2. Initialise each module with cross-module callbacks
+  initAuth({
+    onAuthSuccess: () => startListPolling(),
+    onActivateAdmin: () => activateAdmin(),
+    onDeactivateAdmin: () => deactivateAdmin(),
+  });
+
+  initPlayer({
+    onClosePlayer: handleClosePlayer,
+  });
+
+  initStreams();
+
+  initVod();
+
+  initAdmin({
+    onSwitchTab: switchTab,
+  });
+
+  // 3. Bind global events (tabs, offline/online, visibility)
+  bindGlobalEvents();
+
+  // 4. Check auth & admin session, then start
   checkAuthAndStart();
+  checkAdminSession();
 }
 
 init();
