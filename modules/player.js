@@ -267,8 +267,19 @@ async function checkIfStreamStopped() {
     if (stream.status === "stopped") {
       showOverlay("S\u00e4ndningen har avslutats", false);
       setTimeout(closePlayer, 2500);
+    } else if (stream.status === "paused") {
+      // Stream was paused while we had an HLS error — show pause overlay
+      setStatus("paused");
+      destroyHls();
+    } else if (stream.status === "waiting") {
+      // Stream is resuming — wait for it to go live (polling will pick it up)
+      setStatus("connecting");
+      showOverlay("V\u00e4ntar p\u00e5 s\u00e4ndningen\u2026", true);
     } else {
-      // Stream still exists but HLS failed -- try reconnecting
+      // Stream still exists — update URL and try reconnecting
+      if (stream.hlsUrl) {
+        state.currentStreamUrl = stream.hlsUrl;
+      }
       state.hlsReconnectAttempts++;
       if (state.hlsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         showOverlay("S\u00e4ndningen verkar ha avbrutits", false);
@@ -596,7 +607,18 @@ async function pollCurrentStream() {
         // Destroy current HLS to free resources while paused
         destroyHls();
       }
+    } else if (stream.status === "waiting") {
+      // Stream is resuming (new Restreamer process, waiting for RTMP input).
+      // Keep current overlay (pause/connecting) and wait for "live".
+      if (state.currentStatus !== "connecting" && state.currentStatus !== "paused") {
+        setStatus("connecting");
+      }
     } else if (stream.status === "live" && state.currentStatus !== "live") {
+      // Update HLS URL — Restreamer may have created a new process after resume
+      if (stream.hlsUrl) {
+        state.currentStreamUrl = stream.hlsUrl;
+      }
+      state.hlsReconnectAttempts = 0;
       setStatus("connecting");
       tryConnect();
     }
