@@ -12,6 +12,10 @@ import { stopVodPolling } from "./vod.js";
 // Callbacks injected by the orchestrator
 let onClosePlayer = null; // called when player is closed (returns to list)
 
+// Consecutive poll failure counter — only close player after multiple failures
+let pollFailCount = 0;
+const MAX_POLL_FAILURES = 6; // 6 × 5s = 30 seconds of consecutive failures before giving up
+
 // ============================
 // Status
 // ============================
@@ -223,30 +227,33 @@ function onManifestParsed() {
 function onHlsError(_event, data) {
   if (!data.fatal) return;
 
+  console.warn(`HLS fatal error: type=${data.type}, details=${data.details}`);
+
   if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+    console.warn("Attempting media error recovery...");
     state.hls.recoverMediaError();
     return;
   }
 
-  // NETWORK_ERROR — try restarting HLS before giving up
-  if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-    state.hlsReconnectAttempts++;
-    if (state.hlsReconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
-      setStatus("connecting");
-      showOverlay(
-        `Återansluter (${state.hlsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})\u2026`,
-        true
-      );
-      setTimeout(() => {
-        if (state.currentStreamUrl) {
-          startHls();
-        }
-      }, 2000);
-      return;
-    }
+  // ALL fatal errors (NETWORK_ERROR, MUX_ERROR, OTHER_ERROR) —
+  // always try restarting HLS before giving up. A single transient error
+  // should never kill a live basketball stream.
+  state.hlsReconnectAttempts++;
+  if (state.hlsReconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+    setStatus("connecting");
+    showOverlay(
+      `\u00c5teransluter (${state.hlsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})\u2026`,
+      true
+    );
+    setTimeout(() => {
+      if (state.currentStreamUrl) {
+        startHls();
+      }
+    }, 2000);
+    return;
   }
 
-  // Exhausted retries or other fatal errors
+  // Exhausted retries
   destroyHls();
   checkIfStreamStopped();
 }
@@ -259,8 +266,22 @@ async function checkIfStreamStopped() {
       { headers: authHeaders() }
     );
     if (!res.ok) {
-      showOverlay("S\u00e4ndningen har avslutats", false);
-      setTimeout(closePlayer, 2500);
+      // API error (500, 502, etc.) — DON'T assume stream is dead.
+      // The backend or Restreamer may be temporarily overloaded.
+      // Keep trying to reconnect HLS instead of closing the player.
+      console.warn(`checkIfStreamStopped: API returned ${res.status}, retrying HLS...`);
+      state.hlsReconnectAttempts++;
+      if (state.hlsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        showOverlay("S\u00e4ndningen verkar ha avbrutits", false);
+        setTimeout(closePlayer, 2500);
+      } else {
+        setStatus("connecting");
+        showOverlay(
+          `\u00c5teransluter (${state.hlsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})\u2026`,
+          true
+        );
+        setTimeout(tryConnect, 3000);
+      }
       return;
     }
     const stream = await res.json();
@@ -294,7 +315,16 @@ async function checkIfStreamStopped() {
       }
     }
   } catch {
-    setStatus("offline");
+    // Network error — don't close, try reconnecting HLS
+    console.warn("checkIfStreamStopped: network error, retrying HLS...");
+    state.hlsReconnectAttempts++;
+    if (state.hlsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      showOverlay("S\u00e4ndningen verkar ha avbrutits", false);
+      setTimeout(closePlayer, 2500);
+    } else {
+      setStatus("connecting");
+      setTimeout(tryConnect, 3000);
+    }
   }
 }
 
@@ -592,11 +622,20 @@ async function pollCurrentStream() {
       { headers: authHeaders() }
     );
     if (!res.ok) {
-      // Stream gone
-      showOverlay("S\u00e4ndningen har avslutats", false);
-      setTimeout(closePlayer, 2500);
+      // API error — DON'T close immediately. The backend may be temporarily
+      // unreachable or the Restreamer may be slow. Only close after multiple
+      // consecutive failures to avoid killing live streams.
+      pollFailCount++;
+      console.warn(`Stream poll failed (${pollFailCount}/${MAX_POLL_FAILURES}): HTTP ${res.status}`);
+      if (pollFailCount >= MAX_POLL_FAILURES) {
+        showOverlay("Tappade kontakten med servern", false);
+        setTimeout(closePlayer, 2500);
+      }
       return;
     }
+    // Reset failure counter on any successful response
+    pollFailCount = 0;
+
     const stream = await res.json();
     if (stream.status === "stopped") {
       showOverlay("S\u00e4ndningen har avslutats", false);
@@ -609,21 +648,30 @@ async function pollCurrentStream() {
       }
     } else if (stream.status === "waiting") {
       // Stream is resuming (new Restreamer process, waiting for RTMP input).
-      // Keep current overlay (pause/connecting) and wait for "live".
-      if (state.currentStatus !== "connecting" && state.currentStatus !== "paused") {
+      // Show "connecting" so the viewer knows something is happening.
+      if (state.currentStatus !== "connecting") {
         setStatus("connecting");
       }
-    } else if (stream.status === "live" && state.currentStatus !== "live") {
-      // Update HLS URL — Restreamer may have created a new process after resume
-      if (stream.hlsUrl) {
-        state.currentStreamUrl = stream.hlsUrl;
-      }
+    } else if (stream.status === "live") {
+      // Backend confirms stream is live — always reset reconnect budget
       state.hlsReconnectAttempts = 0;
-      setStatus("connecting");
-      tryConnect();
+      if (state.currentStatus !== "live") {
+        // Update HLS URL — Restreamer may have created a new process after resume
+        if (stream.hlsUrl) {
+          state.currentStreamUrl = stream.hlsUrl;
+        }
+        setStatus("connecting");
+        tryConnect();
+      }
     }
   } catch {
-    // Network error, keep polling
+    // Network error — increment failure counter but keep polling
+    pollFailCount++;
+    console.warn(`Stream poll network error (${pollFailCount}/${MAX_POLL_FAILURES})`);
+    if (pollFailCount >= MAX_POLL_FAILURES) {
+      showOverlay("Tappade kontakten med servern", false);
+      setTimeout(closePlayer, 2500);
+    }
   }
 }
 
@@ -665,6 +713,7 @@ export function openPlayer(hlsUrl, name, streamId) {
   state.currentStreamUrl = hlsUrl;
   state.currentStreamId = streamId;
   state.hlsReconnectAttempts = 0;
+  pollFailCount = 0;
   stopListPolling();
   stopVodPolling();
 
