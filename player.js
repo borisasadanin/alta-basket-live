@@ -14,6 +14,8 @@ import {
 } from "./modules/player.js";
 import { initStreams, startListPolling, stopListPolling } from "./modules/streams.js";
 import { initVod, startVodPolling, stopVodPolling } from "./modules/vod.js";
+import { initHighlights, playClip } from "./modules/highlights.js";
+import { checkDeepLink } from "./modules/deeplink.js";
 import {
   initAdmin,
   activateAdmin,
@@ -139,7 +141,12 @@ function init() {
 
   // 2. Initialise each module with cross-module callbacks
   initAuth({
-    onAuthSuccess: () => startListPolling(),
+    onAuthSuccess: () => {
+      startListPolling();
+      checkDeepLink({ switchTab, playClip }).catch((err) =>
+        console.error("[player] checkDeepLink failed:", err)
+      );
+    },
     onActivateAdmin: () => activateAdmin(),
     onDeactivateAdmin: () => deactivateAdmin(),
   });
@@ -151,6 +158,8 @@ function init() {
   initStreams();
 
   initVod();
+
+  initHighlights();
 
   initAdmin({
     onSwitchTab: switchTab,

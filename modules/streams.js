@@ -30,12 +30,80 @@ async function fetchStreams() {
   }
 }
 
-function renderStreamList(streams) {
-  if (!streams || streams.length === 0) {
+async function fetchBroadcastState() {
+  try {
+    const res = await fetch(`${CONFIG.API_URL}/api/broadcast`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+const BROADCAST_MESSAGES = {
+  idle: {
+    title: "Ingen sänder just nu",
+    sub: "Sändningen visas här automatiskt när den startar",
+  },
+  upcoming: {
+    title: "En basketmatch startar snart!",
+    sub: "Sändningen börjar inom kort",
+  },
+  paused: {
+    title: "Matchen är pausad",
+    sub: "Sändningen fortsätter snart",
+  },
+  ended: {
+    title: "Tack för att du tittade!",
+    sub: "Matchen är slut",
+  },
+};
+
+function updateEmptyState(broadcastState) {
+  const status = broadcastState?.status || "idle";
+  const msgs = BROADCAST_MESSAGES[status] || BROADCAST_MESSAGES.idle;
+  const showBg = status !== "idle";
+
+  dom.emptyTitle.textContent = msgs.title;
+
+  // Show match info as subtitle if available (e.g., "Älta vs AIK")
+  if (broadcastState?.message && status === "upcoming") {
+    dom.emptySub.textContent = broadcastState.message;
+  } else {
+    dom.emptySub.textContent = msgs.sub;
+  }
+
+  // Toggle background image for non-idle states
+  dom.emptyBg.classList.toggle("active", showBg);
+
+  // Toggle state-specific class on empty-state container
+  dom.emptyState.className = "empty-state" + (status !== "idle" ? ` ${status}` : "");
+
+  // Update status dot for upcoming
+  if (status === "upcoming") {
+    dom.statusDot.className = "status-dot upcoming";
+  }
+}
+
+function renderStreamList(streams, broadcastState) {
+  // If broadcast is "upcoming", the operator's just-posted announcement
+  // must win over lingering stopped cards (backend keeps stopped streams in
+  // the list for STOPPED_TTL_MS). Treat an all-stopped list as empty so the
+  // upcoming message is visible instead of being hidden behind AVBRUTEN cards.
+  const hasNonStopped = streams && streams.some((s) => s.status !== "stopped");
+  const showAsEmpty =
+    !streams ||
+    streams.length === 0 ||
+    (broadcastState?.status === "upcoming" && !hasNonStopped);
+
+  if (showAsEmpty) {
     dom.streamGrid.innerHTML = "";
     dom.streamGrid.classList.add("hidden");
     dom.emptyState.classList.remove("hidden");
-    dom.statusDot.className = "status-dot offline";
+    updateEmptyState(broadcastState);
+    if (!broadcastState || broadcastState.status === "idle") {
+      dom.statusDot.className = "status-dot offline";
+    }
     return;
   }
 
@@ -58,7 +126,7 @@ function renderStreamList(streams) {
       const isStopped = s.status === "stopped";
       const isPaused = s.status === "paused";
       return `
-    <button class="stream-card ${isStopped ? "stopped" : ""}${isPaused ? " paused" : ""}" data-hls="${escapeHtml(s.hlsUrl)}" data-name="${escapeHtml(s.name)}" data-id="${escapeHtml(s.id)}" ${isStopped ? "disabled" : ""}>
+    <button class="stream-card ${isStopped ? "stopped" : ""}${isPaused ? " paused" : ""}" data-hls="${escapeHtml(s.hlsUrl)}" data-dvr="${s.dvrUrl ? escapeHtml(s.dvrUrl) : ""}" data-name="${escapeHtml(s.name)}" data-id="${escapeHtml(s.id)}" ${isStopped ? "disabled" : ""}>
       <div class="stream-card-top">
         <div class="stream-card-badge ${badge.cls}">${escapeHtml(badge.text)}</div>
         ${s.viewers > 0 ? `<div class="stream-card-viewers">${escapeHtml(String(s.viewers))} tittare</div>` : ""}
@@ -70,7 +138,7 @@ function renderStreamList(streams) {
 
   dom.streamGrid.querySelectorAll(".stream-card:not([disabled])").forEach((card) => {
     card.addEventListener("click", () => {
-      openPlayer(card.dataset.hls, card.dataset.name, card.dataset.id);
+      openPlayer(card.dataset.hls, card.dataset.name, card.dataset.id, card.dataset.dvr);
     });
   });
 
@@ -82,9 +150,15 @@ function renderStreamList(streams) {
 // ============================
 
 async function pollStreamList() {
-  const streams = await fetchStreams();
+  const [streams, broadcastState] = await Promise.all([
+    fetchStreams(),
+    fetchBroadcastState(),
+  ]);
   if (streams !== null) {
-    renderStreamList(streams);
+    renderStreamList(streams, broadcastState);
+  } else if (broadcastState) {
+    // Even if stream fetch failed (e.g. no token yet), show broadcast state
+    renderStreamList([], broadcastState);
   }
 }
 

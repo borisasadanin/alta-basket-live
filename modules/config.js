@@ -2,7 +2,7 @@
 
 export const CONFIG = {
   // Backend API URL
-  API_URL: "https://borispriv-altabasketapi.eyevinn-web-runner.auto.prod.osaas.io",
+  API_URL: "https://borispriv-altabasketapi.eyevinn-web-runner.auto.prod-se.osaas.io",
 
   // How often to poll for stream list updates (ms)
   LIST_POLL_INTERVAL: 10000,

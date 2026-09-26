@@ -10,6 +10,7 @@ export const state = {
   // Tab / mode
   activeTab: "live", // "live" | "vod" | "admin"
   isVodMode: false,
+  isDvrMode: false,
 
   // Current stream/VOD being played
   currentStreamUrl: null,
@@ -30,9 +31,15 @@ export const state = {
 
   // Seek state
   isSeeking: false,
+
+  // Highlight carousel (during pause)
+  highlightClips: [],
+  highlightIndex: -1,
+  highlightHls: null,
+  isPlayingHighlights: false,
 };
 
-export const MAX_RECONNECT_ATTEMPTS = 3;
+export const MAX_RECONNECT_ATTEMPTS = 30;
 
 // --- DOM element references (initialised once from initDom) ---
 export const dom = {};
@@ -48,6 +55,10 @@ export function initDom() {
   dom.streamListView = document.getElementById("streamListView");
   dom.streamGrid = document.getElementById("streamGrid");
   dom.emptyState = document.getElementById("emptyState");
+  dom.emptyBg = document.getElementById("emptyBg");
+  dom.emptyLogo = document.getElementById("emptyLogo");
+  dom.emptyTitle = document.getElementById("emptyTitle");
+  dom.emptySub = document.getElementById("emptySub");
 
   // VOD list
   dom.vodListView = document.getElementById("vodListView");
@@ -86,6 +97,7 @@ export function initDom() {
   dom.qualityMenu = document.getElementById("qualityMenu");
   dom.liveBadge = document.getElementById("liveBadge");
   dom.statusDot = document.getElementById("statusDot");
+  dom.backToLiveBtn = document.getElementById("backToLiveBtn");
   dom.streamTitle = document.getElementById("streamTitle");
   dom.streamDesc = document.getElementById("streamDesc");
   dom.pipBtn = document.getElementById("pipBtn");
@@ -97,6 +109,12 @@ export function initDom() {
   dom.iconMuted = dom.muteBtn.querySelector(".icon-muted");
   dom.iconFsEnter = dom.fullscreenBtn.querySelector(".icon-fs-enter");
   dom.iconFsExit = dom.fullscreenBtn.querySelector(".icon-fs-exit");
+
+  // Highlights
+  dom.highlightsSection = document.getElementById("highlightsSection");
+  dom.highlightsGrid = document.getElementById("highlightsGrid");
+  dom.clipPlayer = document.getElementById("clipPlayer");
+  dom.clipVideo = document.getElementById("clipVideo");
 
   // Header / Admin
   dom.headerLogout = document.getElementById("headerLogout");

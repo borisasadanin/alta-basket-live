@@ -2,12 +2,14 @@
 // HLS setup, video controls, overlay, progress bar, PiP, quality menu,
 // seek, keyboard shortcuts, fullscreen, viewer heartbeat.
 
+import Hls from "hls.js";
 import { CONFIG } from "./config.js";
 import { state, dom, MAX_RECONNECT_ATTEMPTS } from "./state.js";
 import { formatTime } from "./utils.js";
 import { authHeaders } from "./auth.js";
 import { stopListPolling } from "./streams.js";
 import { stopVodPolling } from "./vod.js";
+import { fetchClipsForStream } from "./highlights.js";
 
 // Callbacks injected by the orchestrator
 let onClosePlayer = null; // called when player is closed (returns to list)
@@ -34,6 +36,7 @@ function setStatus(status) {
       dom.liveBadge.textContent = "LIVE";
       dom.liveBadge.className = "live-badge live";
       hideOverlay();
+      dom.video.classList.remove("video-fade");
       break;
     case "offline":
       dom.liveBadge.textContent = "OFFLINE";
@@ -43,7 +46,8 @@ function setStatus(status) {
     case "paused":
       dom.liveBadge.textContent = "PAUS";
       dom.liveBadge.className = "live-badge paused";
-      showOverlay("S\u00e4ndningen \u00e4r pausad \u2014 \u00e5terkommer snart", false);
+      showOverlay("Sändningen är pausad — återkommer snart", false);
+      startHighlightCarousel(); // async, non-blocking — replaces overlay if clips exist
       break;
     case "vod":
       dom.liveBadge.textContent = "REPRIS";
@@ -77,6 +81,7 @@ function destroyHls() {
     state.hls.destroy();
     state.hls = null;
   }
+  dom.progressBar.querySelectorAll(".pause-marker").forEach((el) => el.remove());
 }
 
 function tryConnect() {
@@ -107,7 +112,16 @@ function startHls() {
     fragLoadingTimeOut: 10000,
     fragLoadingMaxRetry: 6,
     liveSyncDurationCount: 3,
-    liveBackBufferLength: 30,
+    // DVR mode: keep all back-buffer so viewers can seek back up to 2 hours
+    liveBackBufferLength: state.isDvrMode ? Infinity : 30,
+    // Attach viewer Bearer token on playlist/segment requests to the backend.
+    // Segments on MinIO are public and ignore the header; only the backend uses it.
+    xhrSetup: (xhr) => {
+      const headers = authHeaders();
+      if (headers.Authorization) {
+        xhr.setRequestHeader("Authorization", headers.Authorization);
+      }
+    },
   });
 
   state.hls.loadSource(state.currentStreamUrl);
@@ -196,13 +210,38 @@ function startHlsVod() {
   });
 
   state.hls.on(Hls.Events.ERROR, (_event, data) => {
-    if (data.fatal) {
-      destroyHls();
-      showOverlay("Kunde inte spela upp reprisen", false);
+    if (!data.fatal) return;
+    if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+      console.warn("VOD: recovering from media error", data.details);
+      state.hls.recoverMediaError();
+      return;
+    }
+    destroyHls();
+    showOverlay("Kunde inte spela upp reprisen", false);
+  });
+
+  state.hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+    const frags = data.details.fragments;
+    const pauseTimes = frags
+      .filter((f) => /pause\d+/.test(f.relurl))
+      .map((f) => f.start);
+    if (pauseTimes.length) {
+      renderPauseMarkers(pauseTimes, data.details.totalduration);
     }
   });
 
   state.hls.on(Hls.Events.LEVEL_SWITCHED, onLevelSwitched);
+}
+
+function renderPauseMarkers(times, duration) {
+  dom.progressBar.querySelectorAll(".pause-marker").forEach((el) => el.remove());
+  if (!duration) return;
+  for (const t of times) {
+    const marker = document.createElement("div");
+    marker.className = "pause-marker";
+    marker.style.left = (t / duration) * 100 + "%";
+    dom.progressBar.appendChild(marker);
+  }
 }
 
 // ============================
@@ -412,8 +451,26 @@ function updateProgress() {
     }
 
     updateBufferBar(duration);
+  } else if (state.isDvrMode) {
+    // DVR: seekable timeline with live edge at duration
+    const current = dom.video.currentTime || 0;
+    const duration = dom.video.duration || 0;
+
+    if (duration > 0 && isFinite(duration)) {
+      const pct = (current / duration) * 100;
+      dom.progressFilled.style.width = pct + "%";
+      dom.progressHandle.style.left = pct + "%";
+      dom.timeElapsed.textContent = formatTime(current);
+      dom.timeDuration.textContent = "LIVE";
+
+      // Show/hide "back to live" button based on distance from live edge
+      const behindLive = duration - current;
+      updateBackToLive(behindLive > 10);
+    }
+
+    updateBufferBar(duration);
   } else {
-    // Live: show elapsed wall-clock time
+    // Live (no DVR): show elapsed wall-clock time
     if (state.liveStartTime) {
       const elapsed = (Date.now() - state.liveStartTime) / 1000;
       dom.timeElapsed.textContent = formatTime(elapsed);
@@ -435,11 +492,15 @@ function updateBufferBar(duration) {
 }
 
 function setupProgressForLive() {
-  dom.progressContainer.className = "progress-bar-container live";
+  // DVR mode uses seekable progress bar (like VOD but with growing duration)
+  dom.progressContainer.className = state.isDvrMode
+    ? "progress-bar-container vod dvr"
+    : "progress-bar-container live";
   dom.progressFilled.style.width = "0%";
   dom.progressBuffered.style.width = "0%";
+  dom.progressHandle.style.left = "0%";
   dom.timeElapsed.textContent = "0:00";
-  dom.timeDuration.textContent = "";
+  dom.timeDuration.textContent = state.isDvrMode ? "LIVE" : "";
   state.liveStartTime = null;
 }
 
@@ -462,6 +523,7 @@ function resetProgress() {
   dom.timeElapsed.textContent = "0:00";
   dom.timeDuration.textContent = "0:00";
   dom.progressContainer.classList.remove("seeking");
+  updateBackToLive(false);
 }
 
 // ============================
@@ -480,15 +542,19 @@ function seekTo(ratio) {
   dom.video.currentTime = ratio * duration;
 }
 
+function canSeek() {
+  return state.isVodMode || state.isDvrMode;
+}
+
 function onProgressClick(e) {
-  if (!state.isVodMode) return;
+  if (!canSeek()) return;
   e.stopPropagation();
   const ratio = getSeekPosition(e);
   seekTo(ratio);
 }
 
 function onSeekStart(e) {
-  if (!state.isVodMode) return;
+  if (!canSeek()) return;
   e.stopPropagation();
   state.isSeeking = true;
   dom.progressContainer.classList.add("seeking");
@@ -538,6 +604,23 @@ function togglePlay() {
     dom.video.play();
   } else {
     dom.video.pause();
+  }
+}
+
+// --- Back to live (DVR) ---
+
+function updateBackToLive(show) {
+  if (!dom.backToLiveBtn) return;
+  dom.backToLiveBtn.classList.toggle("hidden", !show);
+}
+
+function jumpToLive() {
+  if (!state.isDvrMode) return;
+  const duration = dom.video.duration;
+  if (duration && isFinite(duration)) {
+    dom.video.currentTime = duration;
+    dom.video.play().catch(() => {});
+    updateBackToLive(false);
   }
 }
 
@@ -602,6 +685,204 @@ function showControls() {
 }
 
 // ============================
+// Highlight carousel (during pause)
+// ============================
+
+let consecutiveClipFailures = 0;
+
+/** Retry startHighlightCarousel after a delay if still paused and carousel not running. */
+function scheduleCarouselRetry(delayMs) {
+  setTimeout(() => {
+    if (state.currentStatus === "paused" && !state.isPlayingHighlights) {
+      console.info(`[carousel] Retrying clip fetch after ${delayMs / 1000}s`);
+      startHighlightCarousel();
+    }
+  }, delayMs);
+}
+
+async function startHighlightCarousel() {
+  if (!state.currentStreamId) return;
+
+  console.info(`[carousel] Fetching clips for stream ${state.currentStreamId}…`);
+  const clips = await fetchClipsForStream(state.currentStreamId);
+
+  // Guard: status may have changed while fetching (e.g. broadcaster already resumed)
+  if (state.currentStatus !== "paused") {
+    console.info("[carousel] Status changed during fetch — aborting");
+    return;
+  }
+
+  if (clips.length === 0) {
+    // No clips yet — schedule a retry so the carousel starts as soon as clips appear
+    console.info("[carousel] No clips found yet — will retry in 30s");
+    scheduleCarouselRetry(30_000);
+    return;
+  }
+
+  console.info(`[carousel] Starting with ${clips.length} clip(s)`);
+
+  state.highlightClips = clips;
+  state.highlightIndex = -1;
+  state.isPlayingHighlights = true;
+  consecutiveClipFailures = 0;
+
+  // Update UI
+  dom.liveBadge.textContent = "HÖJDPUNKTER";
+  dom.liveBadge.className = "live-badge highlights";
+  dom.streamDesc.textContent =
+    `${clips.length} höjdpunkt${clips.length > 1 ? "er" : ""} från matchen`;
+
+  // Fade out video before first clip (hidden behind overlay)
+  dom.video.classList.add("video-fade");
+
+  // Start first clip (no fade-out delay for the first one)
+  playNextHighlight(true);
+}
+
+function playNextHighlight(isFirst = false) {
+  if (!state.isPlayingHighlights) return;
+
+  const loadClip = () => {
+    if (!state.isPlayingHighlights) return;
+
+    // Advance index (wrap around)
+    state.highlightIndex =
+      (state.highlightIndex + 1) % state.highlightClips.length;
+    const clip = state.highlightClips[state.highlightIndex];
+
+    // Update description
+    dom.streamDesc.textContent =
+      `Höjdpunkt ${state.highlightIndex + 1} av ${state.highlightClips.length}`;
+
+    // Destroy previous highlight HLS
+    if (state.highlightHls) {
+      state.highlightHls.destroy();
+      state.highlightHls = null;
+    }
+
+    // Remove previous ended listener
+    dom.video.removeEventListener("ended", onHighlightEnded);
+
+    if (Hls.isSupported()) {
+      state.highlightHls = new Hls({
+        maxBufferLength: 10,
+        maxMaxBufferLength: 20,
+      });
+      state.highlightHls.loadSource(clip.hlsUrl);
+      state.highlightHls.attachMedia(dom.video);
+      state.highlightHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (!state.isPlayingHighlights) return;
+        consecutiveClipFailures = 0;
+        hideOverlay();
+        // Fade in
+        dom.video.classList.remove("video-fade");
+        dom.video.play().catch(() => {
+          dom.video.muted = true;
+          dom.video.play().catch(() => {});
+        });
+      });
+      state.highlightHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          // Destroy immediately to prevent this handler from firing again
+          // (HLS.js can emit multiple fatal errors for the same instance)
+          const errDetails = data.details || "unknown";
+          console.warn(`[carousel] Fatal HLS error on clip ${state.highlightIndex}: ${errDetails}`);
+          state.highlightHls?.destroy();
+          state.highlightHls = null;
+          consecutiveClipFailures++;
+          if (consecutiveClipFailures >= state.highlightClips.length) {
+            // All clips failed — fall back to pause overlay and retry after a while
+            console.warn(`[carousel] All ${state.highlightClips.length} clip(s) failed — retrying in 15s`);
+            stopHighlightCarousel();
+            dom.liveBadge.textContent = "PAUS";
+            dom.liveBadge.className = "live-badge paused";
+            showOverlay("Sändningen är pausad — återkommer snart", false);
+            scheduleCarouselRetry(15_000);
+            return;
+          }
+          playNextHighlight();
+        }
+      });
+    } else if (dom.video.canPlayType("application/vnd.apple.mpegurl")) {
+      // Safari native HLS
+      dom.video.src = clip.hlsUrl;
+      dom.video.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (!state.isPlayingHighlights) return;
+          consecutiveClipFailures = 0;
+          hideOverlay();
+          dom.video.classList.remove("video-fade");
+          dom.video.play().catch(() => {});
+        },
+        { once: true }
+      );
+      // Skip to next clip on load error (broken URL, MinIO unavailable, etc.)
+      dom.video.addEventListener(
+        "error",
+        () => {
+          if (!state.isPlayingHighlights) return;
+          console.warn(`[carousel] Safari: error loading clip ${state.highlightIndex}`);
+          consecutiveClipFailures++;
+          if (consecutiveClipFailures >= state.highlightClips.length) {
+            console.warn(`[carousel] All ${state.highlightClips.length} clip(s) failed (Safari) — retrying in 15s`);
+            stopHighlightCarousel();
+            dom.liveBadge.textContent = "PAUS";
+            dom.liveBadge.className = "live-badge paused";
+            showOverlay("Sändningen är pausad — återkommer snart", false);
+            scheduleCarouselRetry(15_000);
+            return;
+          }
+          playNextHighlight();
+        },
+        { once: true }
+      );
+    }
+
+    // When clip ends, play the next one
+    dom.video.addEventListener("ended", onHighlightEnded, { once: true });
+  };
+
+  if (isFirst) {
+    // First clip: no fade-out delay needed (overlay is already visible)
+    loadClip();
+  } else {
+    // Subsequent clips: fade out, wait, then load next
+    dom.video.classList.add("video-fade");
+    setTimeout(loadClip, 400);
+  }
+}
+
+function onHighlightEnded() {
+  if (!state.isPlayingHighlights) return;
+  playNextHighlight();
+}
+
+function stopHighlightCarousel() {
+  if (!state.isPlayingHighlights) return;
+
+  state.isPlayingHighlights = false;
+
+  if (state.highlightHls) {
+    state.highlightHls.destroy();
+    state.highlightHls = null;
+  }
+
+  dom.video.removeEventListener("ended", onHighlightEnded);
+  dom.video.pause();
+  dom.video.removeAttribute("src");
+  dom.video.load();
+  dom.video.classList.remove("video-fade");
+
+  state.highlightClips = [];
+  state.highlightIndex = -1;
+  consecutiveClipFailures = 0;
+
+  // Reset description so it doesn't linger as "Höjdpunkt X av Y" during reconnect
+  dom.streamDesc.textContent = "Följ matchen live.";
+}
+
+// ============================
 // Stream polling (when player is open but offline)
 // ============================
 
@@ -650,14 +931,19 @@ async function pollCurrentStream() {
       // Stream is resuming (new Restreamer process, waiting for RTMP input).
       // Show "connecting" so the viewer knows something is happening.
       if (state.currentStatus !== "connecting") {
+        stopHighlightCarousel();
         setStatus("connecting");
       }
     } else if (stream.status === "live") {
       // Backend confirms stream is live — always reset reconnect budget
       state.hlsReconnectAttempts = 0;
       if (state.currentStatus !== "live") {
-        // Update HLS URL — Restreamer may have created a new process after resume
-        if (stream.hlsUrl) {
+        stopHighlightCarousel();
+        // Update stream URL — prefer DVR playlist for catch-up support
+        if (stream.dvrUrl) {
+          state.currentStreamUrl = `${CONFIG.API_URL}${stream.dvrUrl}`;
+          state.isDvrMode = true;
+        } else if (stream.hlsUrl) {
           state.currentStreamUrl = stream.hlsUrl;
         }
         setStatus("connecting");
@@ -704,14 +990,20 @@ function sendViewerHeartbeat() {
 /**
  * Open the live-stream player.
  * Called from the streams module when a stream card is clicked.
+ * @param {string} hlsUrl - Direct memfs HLS URL (fallback)
+ * @param {string} name - Stream display name
+ * @param {string} streamId - Stream ID
+ * @param {string} [dvrUrl] - Relative DVR playlist path (e.g. /api/streams/:id/dvr.m3u8)
  */
-export function openPlayer(hlsUrl, name, streamId) {
+export function openPlayer(hlsUrl, name, streamId, dvrUrl) {
   // Guard: don't re-open the same stream
   if (state.currentStreamId === streamId && !dom.playerView.classList.contains("hidden")) return;
 
   state.isVodMode = false;
-  state.currentStreamUrl = hlsUrl;
+  // Use DVR playlist for catch-up capability; fall back to memfs live URL
+  state.currentStreamUrl = dvrUrl ? `${CONFIG.API_URL}${dvrUrl}` : hlsUrl;
   state.currentStreamId = streamId;
+  state.isDvrMode = !!dvrUrl;
   state.hlsReconnectAttempts = 0;
   pollFailCount = 0;
   stopListPolling();
@@ -768,6 +1060,7 @@ export function openVodPlayer(hlsUrl, title, vodId) {
  * Delegates tab-restoration to the orchestrator callback.
  */
 export function closePlayer() {
+  stopHighlightCarousel();
   destroyHls();
   stopStreamPolling();
   stopViewerHeartbeat();
@@ -776,6 +1069,7 @@ export function closePlayer() {
   state.currentStreamUrl = null;
   state.currentStreamId = null;
   state.isVodMode = false;
+  state.isDvrMode = false;
 
   dom.playerView.classList.add("hidden");
   dom.tabNav.classList.remove("hidden");
@@ -828,6 +1122,12 @@ function bindPlayerEvents() {
     dom.qualityMenu.classList.remove("open");
   });
 
+  // Back to live (DVR)
+  dom.backToLiveBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    jumpToLive();
+  });
+
   // Progress bar events
   dom.video.addEventListener("timeupdate", updateProgress);
   dom.video.addEventListener("loadedmetadata", updateProgress);
@@ -867,13 +1167,13 @@ function bindPlayerEvents() {
         togglePip();
         break;
       case "ArrowLeft":
-        if (state.isVodMode) {
+        if (canSeek()) {
           e.preventDefault();
           dom.video.currentTime = Math.max(0, dom.video.currentTime - 10);
         }
         break;
       case "ArrowRight":
-        if (state.isVodMode) {
+        if (canSeek()) {
           e.preventDefault();
           dom.video.currentTime = Math.min(
             dom.video.duration || 0,

@@ -60,11 +60,25 @@ export async function loadAdminStorage() {
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
 
-    // Render storage summary
+    // Render storage summary with capacity bar
     const totalFormatted = formatBytes(data.totalBytes);
+    const capacityFormatted = formatBytes(data.capacityBytes);
+    const usedPercent = data.capacityBytes > 0
+      ? Math.min(100, (data.totalBytes / data.capacityBytes) * 100)
+      : 0;
+    const barClass = usedPercent > 90 ? "danger" : usedPercent > 70 ? "warning" : "";
     dom.adminStorageSummary.innerHTML = `
-      <div class="storage-total">${escapeHtml(totalFormatted)}</div>
-      <div class="storage-label">Totalt lagringsutrymme anv\u00e4nt (${escapeHtml(String(data.vodCount))} repriser)</div>
+      <div class="storage-total">${escapeHtml(totalFormatted)} av ${escapeHtml(capacityFormatted)}</div>
+      <div class="storage-label">Lagringsutrymme anv\u00e4nt (${escapeHtml(String(data.vodCount))} repriser)</div>
+      <div class="storage-bar-container">
+        <div class="storage-bar">
+          <div class="storage-bar-fill ${barClass}" style="width: ${usedPercent.toFixed(1)}%"></div>
+        </div>
+        <div class="storage-stats">
+          <span>${usedPercent.toFixed(0)}% anv\u00e4nt</span>
+          <span>${escapeHtml(formatBytes(data.capacityBytes - data.totalBytes))} ledigt</span>
+        </div>
+      </div>
     `;
 
     // Render VOD list

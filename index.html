@@ -7,7 +7,7 @@
   <meta name="description" content="Följ Älta Courtside live — streama matcher direkt från hallen.">
   <meta property="og:title" content="Älta Courtside — Live">
   <meta property="og:description" content="Följ Älta Courtside live — streama matcher direkt från hallen.">
-  <meta property="og:image" content="https://altacourtside.se/icon.png">
+  <meta property="og:image" content="https://altacourtside.se/assets/icon.png">
   <meta property="og:url" content="https://altacourtside.se">
   <meta property="og:type" content="website">
   <title>Älta Courtside — Live</title>
@@ -60,15 +60,18 @@
         <!-- Filled by JS -->
       </div>
       <div class="empty-state" id="emptyState">
-        <img src="icon.png" alt="Älta IF" class="empty-logo">
-        <p>Ingen sänder just nu</p>
-        <p class="empty-sub">Sändningen visas här automatiskt när den startar</p>
+        <div class="empty-bg" id="emptyBg"></div>
+        <div class="empty-content">
+          <img src="icon.png" alt="Älta IF" class="empty-logo" id="emptyLogo">
+          <p id="emptyTitle">Ingen sänder just nu</p>
+          <p class="empty-sub" id="emptySub">Sändningen visas här automatiskt när den startar</p>
+        </div>
       </div>
     </section>
 
     <!-- VOD list view -->
     <section id="vodListView" class="hidden">
-      <div class="vod-grid" id="vodGrid">
+      <div class="match-list" id="vodGrid">
         <!-- Filled by JS -->
       </div>
       <div class="empty-state" id="vodEmptyState">
@@ -77,6 +80,15 @@
         <p class="empty-sub">Inspelade matcher visas här efter sändning</p>
       </div>
     </section>
+
+    <!-- Mini-player for highlight clips (used on VOD page) -->
+    <div class="clip-player hidden" id="clipPlayer">
+      <div class="clip-player-header">
+        <span class="clip-player-label">Höjdpunkt</span>
+        <button class="clip-player-close" id="clipPlayerClose">&times;</button>
+      </div>
+      <video id="clipVideo" playsinline controls></video>
+    </div>
 
     <!-- Player view (hidden until a stream is selected) -->
     <section id="playerView" class="hidden">
@@ -105,6 +117,7 @@
             </button>
 
             <div class="live-badge offline" id="liveBadge">OFFLINE</div>
+            <button id="backToLiveBtn" class="back-to-live-btn hidden" aria-label="Tillbaka till live">LIVE &#x25B6;</button>
 
             <div class="volume-group">
               <button id="muteBtn" class="control-btn" aria-label="Ljud">
@@ -150,6 +163,7 @@
         <h2 id="streamTitle">Livesändning</h2>
         <p id="streamDesc">Följ matchen live.</p>
       </section>
+
     </section>
 
     <!-- Admin view (hidden until admin login) -->
@@ -170,7 +184,6 @@
     <p>&copy; 2026 Älta Courtside</p>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" integrity="sha384-9v3HcdYrO3D+OPDTjZ40RXocgE4GtXVCd3/mCS62JsM93JXgI1afJVuwjFvsu6ni" crossorigin="anonymous"></script>
   <script type="module" src="player.js"></script>
 </body>
 </html>

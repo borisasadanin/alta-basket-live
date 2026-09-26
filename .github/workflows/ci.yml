@@ -5,15 +5,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check required files exist
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Validate build output
         run: |
-          test -f index.html
-          test -f style.css
-          test -f player.js
-          test -f config.js
-      - name: Validate HTML
-        run: |
-          # Basic syntax check — ensure index.html is well-formed
-          grep -q '<html' index.html
-          grep -q '</html>' index.html
-          echo "HTML structure OK"
+          test -f dist/index.html
+          test -f dist/clip.html
+          echo "Build output OK"

@@ -26,12 +26,33 @@ export function formatDuration(seconds) {
 export function formatDate(dateStr) {
   if (!dateStr) return "";
   try {
-    const d = new Date(dateStr);
+    const d = new Date(dateStr + "T12:00:00");
     return d.toLocaleDateString("sv-SE", {
       year: "numeric",
       month: "short",
       day: "numeric",
     });
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Format a date string with weekday in Swedish (e.g. "Lördag 28 mars 2026").
+ * Uses T12:00:00 to avoid timezone-day-shift issues.
+ */
+export function formatDateFull(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const d = new Date(dateStr + "T12:00:00");
+    const str = d.toLocaleDateString("sv-SE", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+    // Capitalize first letter ("lördag 28 mars 2026" → "Lördag 28 mars 2026")
+    return str.charAt(0).toUpperCase() + str.slice(1);
   } catch {
     return dateStr;
   }
