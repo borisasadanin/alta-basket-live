@@ -2,7 +2,7 @@ name: Deploy
 on: workflow_dispatch
 jobs:
   deploy-website:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -13,9 +13,34 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
-      - name: Install OSC CLI
-        run: npm install -g @osaas/cli
+      - name: Install MinIO client
+        run: |
+          curl -sSfL -o /usr/local/bin/mc https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x /usr/local/bin/mc
+      # altacourtside.se is served by Cloudflare from the "basket" bucket on the
+      # borispriv-basket MinIO instance. Hashed assets go up first with a long
+      # cache, then the HTML (no-cache) that points at them, so visitors never
+      # load a page whose assets are missing. Old assets are kept.
       - name: Deploy to MinIO
         env:
-          OSC_ACCESS_TOKEN: ${{ secrets.OSC_ACCESS_TOKEN }}
-        run: osc web publish basket dist --sync
+          MC_HOST_site: https://${{ secrets.MINIO_ACCESS_KEY }}:${{ secrets.MINIO_SECRET_KEY }}@borispriv-basket.minio-minio.auto.prod-se.osaas.io
+        run: |
+          set -euo pipefail
+          for f in dist/assets/*; do
+            case "$f" in
+              *.js)  type="application/javascript; charset=utf-8" ;;
+              *.css) type="text/css; charset=utf-8" ;;
+              *.png) type="image/png" ;;
+              *.jpg) type="image/jpeg" ;;
+              *)     type="application/octet-stream" ;;
+            esac
+            mc cp -q --attr "Cache-Control=public, max-age=31536000;Content-Type=$type" "$f" "site/basket/assets/$(basename "$f")"
+          done
+          for f in index.html clip.html; do
+            mc cp -q --attr "Cache-Control=no-cache;Content-Type=text/html; charset=utf-8" "dist/$f" "site/basket/$f"
+          done
+      - name: Verify
+        run: |
+          bundle=$(grep -oE 'bundle-[0-9a-f]+\.js' dist/index.html)
+          curl -sf "https://altacourtside.se/?v=${GITHUB_RUN_ID}" | grep -q "$bundle"
+          echo "altacourtside.se serves $bundle"
